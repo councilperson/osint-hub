@@ -68,7 +68,8 @@ def _get(
 
 
 def _json_get(url: str, **kwargs: Any) -> Any:
-    r = _get(url, headers={"Accept": "application/json"}, **kwargs)
+    hdrs = {"Accept": "application/json", **(kwargs.pop("headers", None) or {})}
+    r = _get(url, headers=hdrs, **kwargs)
     assert r.status_code < 500, f"upstream {r.status_code} from {url}"
     try:
         return r.json()
