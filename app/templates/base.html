@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}amana{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css?v=6">
+</head>
+<body>
+{% set p = request.url.path %}
+<header class="top">
+  <a class="brand" href="/">am<b>ana</b></a>
+  <span class="spacer"></span>
+  <a class="plan-badge {{ 'pro' if request.state.pro else 'free' }}" href="/pro">{{ 'PRO' if request.state.pro else 'FREE' }}</a>
+  <nav>
+    <a href="{% if p == '/' %}#tools{% else %}/{% endif %}" class="{{ 'on' if p == '/' else '' }}">Tools</a>
+    <a href="/hibp" class="{{ 'on' if p.startswith('/hibp') else '' }}">Pwned</a>
+    <a href="/resources" class="{{ 'on' if p.startswith('/resources') else '' }}">Resources</a>
+    <a href="/notes" class="{{ 'on' if p.startswith('/notes') else '' }}">Notes</a>
+    <a href="/history" class="{{ 'on' if p.startswith('/history') else '' }}">History</a>
+  </nav>
+</header>
+<main class="wrap">
+{% block content %}{% endblock %}
+</main>
+<footer class="foot">
+  <p><strong>Use lawfully.</strong> amana is a public research toolbox for
+  authorized work: your own assets, consensual subjects, or scoped
+  engagements. Public sources only &mdash; no platform logins, no
+  protected-content scraping, no person tracking.</p>
+</footer>
+</body>
+</html>

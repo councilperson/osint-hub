@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "_sections.html" import sections %}
+{% block title %}amana — a public OSINT toolbox{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="kicker">Public sources &middot; zero accounts &middot; local only</div>
+  <h1>Open-source intelligence,<br><span class="grad-text">served clean.</span></h1>
+  <p>Pick a listing, enter a target, get the record. Everything runs on this
+  machine against free public APIs &mdash; no keys, no telemetry, no trace
+  beyond your own local log.</p>
+  <div class="hero-actions">
+    <a class="btn btn-primary" href="#tools">Browse listings &nbsp;&darr;</a>
+    <a class="btn" href="/hibp">&#128273; Pwned checks</a>
+    <a class="btn" href="/pro">&#9992; Pro</a>
+  </div>
+</section>
+
+<div class="filterrow">
+  <a class="fchip {{ 'on' if cat == 'all' else '' }}" href="/?c=all">All</a>
+  {% for c, label in [("identity","Identity"), ("network","Network"), ("domains","Domains"), ("web","Web")] %}
+  <a class="fchip {{ 'on' if cat == c else '' }}" href="/?c={{ c }}">{{ label }}</a>
+  {% endfor %}
+</div>
+
+<section id="tools" class="grid">
+  {% for tid, tool in visible_tools.items() %}
+  <a class="card toolcard" href="/tool/{{ tid }}">
+    <span class="corner {{ 'pro' if tool.cat in ('identity',) else '' }}">{{ tool.cat }}</span>
+    <div class="toolcard-top">
+      <span class="tool-icon">{{ tool.icon | safe }}</span>
+      <h3 style="margin:0">{{ tool.title }}</h3>
+      <span class="arrow">&rarr;</span>
+    </div>
+    <p>{{ tool.blurb }}</p>
+    <span class="hint">Try: <code>{{ tool.placeholder }}</code></span>
+  </a>
+  {% endfor %}
+
+  <a class="card toolcard" href="/hibp">
+    <span class="corner" style="color:var(--accent);border-color:rgba(23,224,165,.4)">breaches</span>
+    <div class="toolcard-top">
+      <span class="tool-icon">&#128273;</span>
+      <h3 style="margin:0">Have I Been Pwned</h3>
+      <span class="arrow">&rarr;</span>
+    </div>
+    <p>Breach catalog with <strong>{{ breach_count }}</strong> indexed breaches,
+    a k-anonymity password checker, and (with an API key) full email-breach
+    lookups.</p>
+    <span class="hint">Password + catalog work with zero setup</span>
+  </a>
+</section>
+
+<div style="height:22px"></div>
+
+<section class="card">
+  <h3>House rules</h3>
+  <ul class="muted-list">
+    <li><strong>Lawful scope only.</strong> Your own infrastructure, consensual subjects, or written-authorization engagements.</li>
+    <li><strong>Public sources only.</strong> No login-walled scraping, no data brokers, no real-time person tracking.</li>
+    <li><strong>Verify before conclusions.</strong> &#8220;found?&#8221; is a lead, not proof &mdash; open the URL and confirm.</li>
+    <li><strong>Minimal logging.</strong> Only tool + target text live in an admin-controlled local log (SQLite); the admin console is on a hidden URL and never linked publicly.</li>
+  </ul>
+</section>
+{% endblock %}

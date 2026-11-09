@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Admin — amana{% endblock %}
+{% block content %}
+
+{% if not is_admin %}
+<div class="centerbox card">
+  <h3>&#128274; Admin sign-in</h3>
+  <p class="muted">Enter the admin token (env var <code>ADMIN_TOKEN</code>).</p>
+  {% if login_error %}<div class="chip bad">Wrong token &mdash; try again.</div>{% endif %}
+  <form method="post" action="login" class="loginform">
+    <input type="password" name="token" placeholder="Admin token" required autocomplete="off">
+    <button type="submit" class="btn btn-primary">Unlock</button>
+  </form>
+  <p class="muted" style="margin-top:12px">Set a custom token via <code>ADMIN_TOKEN</code>
+  before starting the server. The console lives on a hidden URL &mdash; it is
+  never linked from the public pages.</p>
+</div>
+
+{% else %}
+<div class="hero">
+  <h1>Admin <span class="grad-text">console</span></h1>
+  <p class="muted">Local database maintenance. Everything happens on this
+  machine &mdash; <code>{{ db_path }}</code>.</p>
+</div>
+
+{% if is_default_token %}
+<div class="warnbox">&#9888;&#65039; You are running on the default token
+(<code>admin12345</code>). Set <code>ADMIN_TOKEN</code> in your environment and
+restart to change it (then log in again with the new value).</div>
+{% endif %}
+
+<div class="statgrid">
+  <div class="stat"><div class="num">{{ stats.total_queries }}</div><div class="lbl">lookups performed</div></div>
+  <div class="stat"><div class="num">{{ stats.unique_targets }}</div><div class="lbl">unique targets</div></div>
+  <div class="stat"><div class="num">{{ stats.total_notes }}</div><div class="lbl">saved notes</div></div>
+  <div class="stat"><div class="num">{{ stats.total_tools }}</div><div class="lbl">tools used</div></div>
+</div>
+
+<section class="card">
+  <h3>&#9878; Storage actions</h3>
+  <div style="display:flex; gap:10px; flex-wrap:wrap">
+    <form method="post" action="clear-history" onsubmit="return confirm('Delete ALL query history?')">
+      <button class="btn btn-danger btn-sm" type="submit">Clear history</button>
+    </form>
+    <form method="post" action="clear-notes" onsubmit="return confirm('Delete ALL notes?')">
+      <button class="btn btn-danger btn-sm" type="submit">Clear notes</button>
+    </form>
+    <form method="post" action="logout">
+      <button class="btn btn-sm" type="submit">Sign out</button>
+    </form>
+  </div>
+</section>
+
+<section class="card">
+  <h3>&#128230; Registered integrations</h3>
+  <table class="datum kv"><tbody>
+    <tr><th>HIBP email lookup</th><td>{{ 'unlocked &#8212; API key loaded' if hibp_keyed else 'locked &#8212; set HIBP_API_KEY to enable (see the Pwned page)' }}</td></tr>
+    <tr><th>Pro licenses</th><td>{{ 'active on this machine' if pro_state else 'none active (demo checkout on /pro)' }}</td></tr>
+    <tr><th>Outbound sources</th><td>Cloudflare DoH &middot; rdap.org &middot; ip-api.com &middot; haveibeenpwned.com &middot; gravatar.com</td></tr>
+    <tr><th>Database path</th><td>{{ db_path }}</td></tr>
+  </tbody></table>
+</section>
+
+<section class="card">
+  <h3>&#128203; All lookups ({{ recent|length }}) &mdash; full, unfiltered log</h3>
+  {% if recent %}
+  <table class="datum grid-t">
+    <thead><tr><th>When</th><th>Tool</th><th>Target</th><th></th></tr></thead>
+    <tbody>
+    {% for item in recent %}
+      <tr>
+        <td class="muted">{{ item.created_str }}</td>
+        <td>{{ item.tool }}</td>
+        <td><a href="/tool/{{ item.tool }}?q={{ item.target }}">{{ item.target }}</a></td>
+        <td><form method="post" action="delete-query/{{ item.id }}"><button class="delbox" type="submit" title="Delete entry">&#10005;</button></form></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">No history.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h3>&#128221; Notes ({{ notes|length }})</h3>
+  {% for note in notes %}
+  <div class="notecard">
+    <div class="notecard-top">
+      <span class="tag">{{ note.tool }}</span>
+      <strong>{{ note.target }}</strong>
+      <form method="post" action="delete-note/{{ note.id }}" class="delbox">
+        <button type="submit" title="Delete note">&#10005;</button>
+      </form>
+    </div>
+    <p>{{ note.summary }}</p>
+  </div>
+  {% else %}<p class="muted">No notes saved.</p>{% endfor %}
+</section>
+{% endif %}
+{% endblock %}

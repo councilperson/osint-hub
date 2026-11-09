@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Resources — amana{% endblock %}
+{% block content %}
+<div class="hero">
+  <h1>Resource <span class="grad-text">library</span></h1>
+  <p>Curated starting points for deeper research &mdash; the tools professional
+  investigators actually reference. All free (some have paid tiers). Links open
+  in a new tab.</p>
+</div>
+
+{% if is_pro %}
+<a class="provelcro" href="/resources/private">
+  &#128274; Pro member &mdash; your <strong>private desk</strong> ({{ pro_count }} extra sources)
+  is ready &rarr; open it
+</a>
+{% else %}
+<a class="provelcro" href="/pro">
+  &#128274; Pro members also get the <strong>private desk</strong>:
+  infrastructure-recon toolkits, live threat feeds and verification software &mdash; unlock with Pro
+</a>
+{% endif %}
+
+{% for category, items in resources.items() %}
+<section class="card">
+  <h3>{{ category }} <span class="muted" style="font-weight:400">&middot; {{ items|length }}</span></h3>
+  <ul class="reslist">
+    {% for item in items %}
+    <li>
+      <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.name }} &nearr;</a>
+      <span class="note">{{ item.note }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endfor %}
+{% endblock %}

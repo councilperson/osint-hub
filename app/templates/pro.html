@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% from "_sections.html" import sections %}
+{% block title %}amana pro — go Pro{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="kicker">amana pro</div>
+  <h1>Go <span class="grad-text">Pro.</span></h1>
+  <p>One-time local license, activated instantly. No account, no cloud, no
+  phone-home &mdash; your key lives in <code>data/osint.db</code> and every
+  check keeps running on your machine.</p>
+</div>
+
+<div class="chip {{ 'ok' if request.state.pro else 'warn' }}">
+  Current plan: {{ 'PRO' if request.state.pro else 'FREE' }}
+</div>
+
+{% if new_key %}
+<div class="provelcro">
+  &#127381; Activated! Your license key: <code>{{ new_key }}</code>
+  &mdash; keep it somewhere safe (it also lives in your local database).
+</div>
+{% endif %}
+
+<div class="pricegrid">
+  <div class="pricecard">
+    <div class="plan-k">Free</div>
+    <div class="price">$0</div>
+    <div class="per">forever, everything self-hosted</div>
+    <ul class="featurelist">
+      <li>6 core lookups: RDAP, DNS, IP, headers, URL anatomy, email</li>
+      <li>Username check &mdash; first 10 platforms</li>
+      <li><strong>64-entry resource library</strong> &mdash; all of it, free forever</li>
+      <li>Pwned-password check + full breach catalog</li>
+      <li>Last 25 history records</li>
+      <li>Local case notes</li>
+    </ul>
+  </div>
+
+  <div class="pricecard featured">
+    <div class="plan-k" style="color:var(--accent)">Pro</div>
+    <div class="price">{{ '$4.99' }}<small> /mo</small></div>
+    <div class="per"><s style="opacity:.6">$9/mo</s> intro rate &mdash; first few weeks only, then $9/mo</div>
+    <ul class="featurelist">
+      <li><strong>Username check on all 19 platforms</strong></li>
+      <li><strong>Batch username checking</strong> &mdash; up to 10 handles per run</li>
+      <li><strong>The private desk</strong> &mdash; 20 extra pro-only sources (infra recon, live threat feeds, verification kit)</li>
+      <li><strong>Markdown export</strong> of your case notes</li>
+      <li><strong>Full history view</strong> &mdash; 500+ records, search-friendly</li>
+      <li>Crypto payments only &mdash; no card, no KYC</li>
+      <li>Everything in Free, obviously</li>
+    </ul>
+    {% if request.state.pro %}
+    <form method="post" action="/pro/deactivate">
+      <button class="btn btn-danger btn-sm" type="submit">Deactivate Pro</button>
+    </form>
+    {% else %}
+    <a class="btn btn-primary" href="/pro/checkout" style="width:100%;justify-content:center">Pay with crypto &nbsp;&#10132;</a>
+    {% endif %}
+  </div>
+</div>
+
+<section class="card">
+  <h3>Checkout, honestly</h3>
+  <p class="muted">This build runs a <strong>demo crypto checkout</strong>: the
+  checkout page shows BTC / XMR / LTC addresses (placeholders) and pressing
+  &#8220;Payment sent&#8221; issues a license locally &mdash; nothing is billed and no
+  money moves. It exists so you can drive the full upgrade flow end-to-end.
+  To take real coins, plug in a gateway like BTCPay Server and point its
+  webhook at the same purchase endpoint (same pattern as the escrow build:
+  simulated ledger here, real rails gated by configuration). Licenses are
+  checked server-side on every request, so the free-tier limits are enforced
+  in code, not by hiding buttons.</p>
+</section>
+
+{% if licenses %}
+<section class="card">
+  <h3>&#127380; Licenses on this machine</h3>
+  <table class="datum grid-t">
+    <thead><tr><th>Key</th><th>Plan</th><th>State</th><th>Issued</th></tr></thead>
+    <tbody>
+      {% for lic in licenses %}
+      <tr>
+        <td><code>{{ lic.key }}</code></td>
+        <td>{{ lic.plan }}</td>
+        <td>{{ 'active' if lic.active else 'inactive' }}</td>
+        <td class="muted">{{ lic.created_str }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="card">
+  <h3>Why there's a paid tier at all</h3>
+  <p class="muted">The data is public and free &mdash; the paid tier pays for
+  engineering time: keeping platform checks alive as sites change, maintaining
+  the parsers, and hosting updates. Free stays genuinely useful forever; Pro is
+  for volume work.</p>
+</section>
+{% endblock %}

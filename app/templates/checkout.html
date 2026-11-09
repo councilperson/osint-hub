@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Checkout — amana pro{% endblock %}
+{% block content %}
+<div class="hero">
+  <div class="kicker">checkout &middot; crypto only</div>
+  <h1>Pay with <span class="grad-text">crypto.</span></h1>
+  <p>amana accepts cryptocurrency only &mdash; no cards, no PayPal, no
+  personal data changes hands. The price below is the <strong>intro rate
+  ({{ intro_price }}/mo)</strong> for the first few weeks, then it moves to
+  {{ standard_price }}/mo.</p>
+</div>
+
+<section class="card">
+  <h3>&#128269; How this works</h3>
+  <ol class="muted-list">
+    <li>Pick a coin below. The demo address is shown so you can see the flow.</li>
+    <li>Send exactly the amount for one month of Pro.</li>
+    <li>Press <strong>&#8220;Payment sent&#8221;</strong> to complete the demo purchase &mdash;
+    the license activates instantly on this machine.</li>
+  </ol>
+  <div class="warnbox">&#9888;&#65039; <strong>Demo checkout.</strong> The addresses below are
+  placeholders and nothing is actually billed. In production you'd wire a
+  crypto gateway (e.g. BTCPay Server) to this same confirmation endpoint so
+  an on-chain webhook issues the license &mdash; the server-side gating would
+  not change.</div>
+</section>
+
+{% for co in crypto_options %}
+<section class="card">
+  <div class="toolcard-top">
+    <span class="tool-icon">{{ co.icon | safe }}</span>
+    <h3 style="margin:0">{{ co.name }} <span class="muted">({{ co.code }})</span></h3>
+    <span class="corner pro">{{ intro_price }} /mo</span>
+  </div>
+  <p class="muted" style="margin-top:10px">Send exactly:</p>
+  <p><code>0.00{{ loop.index }}{{ co.code | lower }}</code></p>
+  <p class="muted" style="margin-top:10px">To this {{ co.code }} address (demo):</p>
+  <p style="word-break:break-all"><code>DEMO-{{ co.code }}-7kFqT9aVneWvM2xLpQrS8bZcH1jXyG4dN6uE0wAp</code></p>
+</section>
+{% endfor %}
+
+<section class="card">
+  <h3>&#9989; Complete the purchase</h3>
+  <p class="muted">After sending (or in this demo, after choosing your coin),
+  confirm below. Your Pro license is generated locally &mdash; no account, no
+  email, nothing leaves this machine.</p>
+  <form method="post" action="/pro/purchase">
+    <button class="btn btn-primary" type="submit" style="width:100%">&#8220;Payment sent&#8221; &mdash; activate Pro &nbsp;&#10132;</button>
+  </form>
+  <p class="muted" style="margin-top:10px"><a href="/pro">&larr; back to plans</a></p>
+</section>
+{% endblock %}

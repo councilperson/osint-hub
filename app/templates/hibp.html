@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "_sections.html" import sections %}
+{% block title %}Pwned checks — amana{% endblock %}
+{% block content %}
+<div class="hero">
+  <h1>Have I Been <span class="grad-text">Pwned</span>?</h1>
+  <p>Two checks work with no account: the <strong>public breach catalog</strong>
+  (every major breach HIBP has indexed) and the <strong>pwned-password
+  lookup</strong> (k-anonymity — your password never leaves this machine in
+  recognizable form). Full <em>email breach lookups</em> unlock with an
+  official HIBP API key.</p>
+</div>
+
+<!-- password check -->
+<section class="card">
+  <h3>&#128273; Pwned-password check</h3>
+  <p class="muted">Checks 600+ million real leaked passwords. Only the first
+  5 characters of the SHA-1 hash are sent — the password itself and the rest of
+  the hash stay local. Passwords are never stored or logged.</p>
+  <form method="post" action="/hibp/password" class="querybar" autocomplete="off">
+    <input type="password" name="password" placeholder="Type a password to test&hellip;" required autocomplete="new-password">
+    <button type="submit">Check</button>
+  </form>
+  {% if password_result %}
+    <div class="chip {{ password_result.summary.level }}">{{ password_result.summary.text }}</div>
+    {{ sections(password_result.sections) }}
+  {% endif %}
+</section>
+
+<!-- account lookup -->
+<section class="card">
+  <h3>&#128231; Email breach lookup</h3>
+  {% if keyed %}
+  <form method="post" action="/hibp/email" class="querybar" autocomplete="off">
+    <input type="email" name="email" placeholder="person@example.com" required>
+    <button type="submit">Check breaches</button>
+  </form>
+  {% else %}
+  <p class="muted">This check needs the official HIBP subscription API:</p>
+  <ol class="muted-list">
+    <li>Create a free account at <a href="https://haveibeenpwned.com/API/Key" target="_blank" rel="noopener noreferrer">haveibeenpwned.com/API/Key</a> (key is free to make; email-search API needs a <strong>&asymp;$3.50/mo</strong> subscription) </li>
+    <li>Set the environment variable before starting the app:<br><code>set HIBP_API_KEY=your-key</code> or <code>$env:HIBP_API_KEY="your-key"</code></li>
+    <li>Restart <code>uvicorn</code> &mdash; the form appears here automatically.</li>
+  </ol>
+  <p class="muted">Until then you can check any address manually at
+  <a href="https://haveibeenpwned.com" target="_blank" rel="noopener noreferrer">haveibeenpwned.com</a>.</p>
+  {% endif %}
+  {% if email_result %}
+    <div class="chip {{ email_result.summary.level }}">{{ email_result.summary.text }}</div>
+    {{ sections(email_result.sections) }}
+  {% endif %}
+</section>
+
+<!-- catalog -->
+<section class="card" id="catalog">
+  <h3>&#128202; Breach catalog</h3>
+  <p class="muted">All {{ catalog_count }} breaches indexed by HIBP
+  (cached 10 min). Search by keyword or domain, or browse the biggest ones.</p>
+  <form method="get" action="/hibp" class="querybar">
+    <input type="text" name="domain" value="{{ domain }}" placeholder="Filter: e.g. adobe, linkedin, example.com&hellip;">
+    <button type="submit">Filter</button>
+  </form>
+  <div class="chip warn">{{ domain or 'biggest breaches' }} &middot; {{ catalog_rows|length }} shown</div>
+  {{ sections(catalog_sections or []) }}
+</section>
+
+<p class="muted">Data source: <a href="https://haveibeenpwned.com/api/v3" target="_blank" rel="noopener noreferrer">the official HIBP API</a>.
+This tool is not affiliated with Have I Been Pwned or Troy Hunt.</p>
+{% endblock %}

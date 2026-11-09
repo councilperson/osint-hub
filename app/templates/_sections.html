@@ -1,0 +1,29 @@
+{% macro sections(sections) %}
+{% for s in sections %}
+<section class="card">
+  <h3>{{ s.title }}</h3>
+  {% if s.kind == 'kv' %}
+    <table class="datum kv"><tbody>
+      {% for row in s['rows'] %}<tr><th>{{ row[0] }}</th><td>{{ row[1] }}</td></tr>{% endfor %}
+    </tbody></table>
+  {% elif s.kind == 'table' %}
+    <div class="scroll">
+    <table class="datum grid-t">
+      <thead><tr>{% for h in s['head'] %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in s['rows'] %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% elif s.kind == 'list' %}
+    <ul class="muted-list">{% for item in s['items'] %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% elif s.kind == 'chips' %}
+    <div class="classchips">{% for item in s['items'] %}<span class="classchip">{{ item }}</span>{% endfor %}</div>
+  {% elif s.kind == 'code' %}
+    <pre>{{ s['text'] }}</pre>
+  {% else %}
+    <p class="muted">{{ s['text'] }}</p>
+  {% endif %}
+</section>
+{% endfor %}
+{% endmacro %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}History — amana{% endblock %}
+{% block content %}
+<div class="hero">
+  <h1>Query <span class="grad-text">history</span></h1>
+  <p class="muted">Last {{ queries|length }} lookups (capped at 2000 rows in
+  <code>data/osint.db</code>). Click a target to re-run it.</p>
+</div>
+{% if queries %}
+<section class="card">
+  <table class="datum grid-t">
+    <thead><tr><th>When</th><th>Tool</th><th>Target</th><th></th></tr></thead>
+    <tbody>
+      {% for item in queries %}
+      <tr>
+        <td class="muted">{{ item.created_str }}</td>
+        <td><a href="/tool/{{ item.tool }}">{{ item.tool }}</a></td>
+        <td><a href="/tool/{{ item.tool }}?q={{ item.target }}">{{ item.target }}</a></td>
+        <td class="muted">ok</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<section class="card"><p class="muted">No history yet &mdash; run a lookup from any tool page.</p></section>
+{% endif %}
+{% endblock %}

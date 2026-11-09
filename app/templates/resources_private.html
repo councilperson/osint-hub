@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Private desk — amana{% endblock %}
+{% block content %}
+<div class="hero">
+  <div class="kicker">pro &middot; private desk</div>
+  <h1>The <span class="grad-text">private desk.</span></h1>
+  <p>Deeper, more technical sources for volume work. Everything here is
+  still a public or self-hostable tool &mdash; the same ethical scope applies:
+  run infrastructure tooling only against assets you own or are authorized
+  to test.</p>
+</div>
+
+{% for category, items in pro_resources.items() %}
+<section class="card">
+  <h3>{{ category }} <span class="muted" style="font-weight:400">&middot; {{ items|length }}</span></h3>
+  <ul class="reslist">
+    {% for item in items %}
+    <li>
+      <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.name }} &nearr;</a>
+      <span class="note">{{ item.note }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endfor %}
+{% endblock %}

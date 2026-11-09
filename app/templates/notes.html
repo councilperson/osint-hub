@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Notes — amana{% endblock %}
+{% block content %}
+<div class="hero">
+  <h1>Case <span class="grad-text">notes</span></h1>
+  <p class="muted">Findings you pinned during lookups. Stored locally in SQLite
+  at <code>data/osint.db</code> &mdash; your data, your machine.</p>
+</div>
+
+{% if saved %}<div class="chip ok">Note saved.</div>{% endif %}
+
+<section class="card">
+  <h3>&#10133; Add a note</h3>
+  <form method="post" action="/notes" class="noteform">
+    <div class="note-row">
+      <select name="tool" required>
+        <option value="" disabled selected>Tool / source</option>
+        {% for tid, t in tools.items() %}<option value="{{ t.title }}">{{ t.title }}</option>{% endfor %}
+        <option value="Pwned checks">Pwned checks</option>
+        <option value="Manual entry">Manual entry</option>
+      </select>
+      <input type="text" name="target" placeholder="Target (domain, IP, handle, email&#8230;)" required>
+    </div>
+    <textarea name="summary" rows="3" placeholder="What you found and why it matters" required></textarea>
+    <button type="submit">Save note</button>
+  </form>
+</section>
+
+{% if notes %}
+<section class="card">
+  <h3>{{ notes|length }} note{{ 's' if notes|length != 1 }}</h3>
+  {% if request.state.pro %}
+  <a class="btn btn-sm" href="/notes/export.md">&#11015; Export Markdown</a>
+  {% else %}
+  <a class="btn btn-sm" href="/pro">&#11015; Unlock export (Pro)</a>
+  {% endif %}
+  {% for note in notes %}
+  <div class="notecard">
+    <div class="notecard-top">
+      <span class="tag">{{ note.tool }}</span>
+      <strong>{{ note.target }}</strong>
+      <form method="post" action="/notes/{{ note.id }}/delete" class="delbox">
+        <button type="submit" title="Delete">&#10005;</button>
+      </form>
+    </div>
+    <p>{{ note.summary }}</p>
+  </div>
+  {% endfor %}
+</section>
+{% else %}
+<section class="card"><p class="muted">No notes yet &mdash; pin one from any tool page.</p></section>
+{% endif %}
+{% endblock %}
