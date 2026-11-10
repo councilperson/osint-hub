@@ -1,4 +1,9 @@
-"""amana — a public open-source-intelligence toolbox.
+"""OSINT Hub — a live open-source-intelligence search engine.
+
+Scans a username across hundreds of public endpoints and streams each result
+back as the source answers. Supports eight identifier types (phone, email,
+username, name, wallet, IP, domain, image), accounts, credits, an API, case
+storage and crypto-only checkout.
 
 Ethics: built for lawful, authorized research (your own assets, consensual
 targets, security research within scope). It deliberately excludes anything
@@ -7,25 +12,47 @@ no login-walled scraping.
 """
 from __future__ import annotations
 
+import datetime
 import hashlib
 import hmac
+import json
 import os
 import re
+import time
+import urllib.parse
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import (HTMLResponse, JSONResponse, PlainTextResponse,
+                               RedirectResponse, Response)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import db, services
+from . import auth, backup, db, plans, qr, reports, scanner, services, stream
 
 BASE = Path(__file__).resolve().parent
 
-app = FastAPI(title="amana", docs_url=None, redoc_url=None)
+# restore the DB from off-box backup (no-op unless BACKUP_* env vars are set)
+backup.restore(db.DB_PATH)
+
+app = FastAPI(title="OSINT Hub", docs_url=None, redoc_url=None,
+              lifespan=backup.lifespan_for(lambda: db.DB_PATH))
 templates = Jinja2Templates(directory=str(BASE / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
 db.init()
+
+# --- ensure owner account exists ---
+_owner_email = os.environ.get("OWNER_EMAIL", "owner@osint-hub.local")
+_owner_pass = os.environ.get("OWNER_PASSWORD", "")
+if _owner_pass:
+    try:
+        owner = auth.create_user(_owner_email, _owner_pass)
+    except auth.AuthError:
+        owner = db.get_user_by_email(_owner_email)
+    if owner:
+        db.set_user_plan(owner["id"], "team")
+        auth.grant_credits(owner["id"], plans.PLANS["team"]["credits"], "owner grant", "init")
 
 templates.env.filters.setdefault("br", lambda s: s)
 
@@ -45,10 +72,92 @@ ADMIN_PATH = (
 )
 
 
+# --------------------------------------------------------------------------
+# current user / plan / credits
+# --------------------------------------------------------------------------
+
+def _session_token(request: Request) -> str:
+    return request.cookies.get(auth.SESSION_COOKIE, "")
+
+
+def _plan_key(plan_id: str) -> str:
+    """The credit-period key: a day for free, a month for paid plans."""
+    plan = plans.get_plan(plan_id)
+    now = datetime.datetime.now()
+    if plan["daily_credits"]:
+        return now.strftime("%Y-%m-%d")
+    return now.strftime("%Y-%m")
+
+
+def _refresh_credits(user: dict | None) -> dict | None:
+    """Top up the user's allowance for the current period, once per period."""
+    if not user:
+        return None
+    plan = plans.get_plan(auth.effective_plan(user))
+    allowance = plan["daily_credits"] or plan["credits"]
+    if allowance <= 0:
+        return user
+    key = _plan_key(plan["id"])
+    db.grant_daily_credits(user["id"], key, allowance)
+    return db.get_user(user["id"])
+
+
 @app.middleware("http")
-async def _pro_state(request: Request, call_next):
-    request.state.pro = db.has_pro()
+async def _session_state(request: Request, call_next):
+    """Resolve the signed-in user and expose plan state to every template."""
+    user = auth.user_for_token(_session_token(request))
+    site_pro = db.has_pro()          # operator licence: unlocks Pro for everyone
+    if user:
+        user = _refresh_credits(user)
+        db.touch_user(user["id"])
+    request.state.user = user
+    request.state.plan = auth.effective_plan(user)
+    request.state.plan_info = auth.plan_of(user)
+    request.state.credits = auth.credits_of(user)
+    request.state.pro = site_pro or auth.is_pro(user)
+    request.state.site_pro = site_pro
     return await call_next(request)
+
+
+def _require_user(request: Request) -> dict | None:
+    """Return the user, or a redirect to the login page."""
+    if request.state.user:
+        return request.state.user
+    return None
+
+
+def _login_redirect(request: Request, next_path: str = "/") -> RedirectResponse:
+    target = urllib.parse.quote(next_path or "/", safe="")
+    return RedirectResponse(f"/login?next={target}", status_code=303)
+
+
+def _is_pro(request: Request) -> bool:
+    return bool(request.state.pro)
+
+
+def _spend(request: Request, kind: str, ref: str = "") -> tuple[bool, str]:
+    """Charge a search against the user's credit balance."""
+    user = request.state.user
+    if not user:
+        return False, "Sign in to run a search."
+    cost = plans.type_cost(kind)
+    balance = auth.credits_of(user)
+    if balance < cost:
+        return False, (f"This search costs {cost} credit{'s' if cost != 1 else ''} "
+                       f"and your balance is {balance}. "
+                       f"Top up on the pricing page or wait for your next allowance.")
+    auth.spend_credits(user, cost, f"{kind} search", ref)
+    request.state.credits = balance - cost
+    return True, ""
+
+
+def _gate_type(request: Request, kind: str) -> str | None:
+    """Return an error message when the plan may not use this search type."""
+    if plans.is_pro_type(kind) and not _is_pro(request):
+        return (f"{plans.TYPE_BY_ID[kind]['label']} search is a Pro feature. "
+                f"Upgrade to unlock it.")
+    return None
+
 
 
 TOOLS: dict[str, dict] = {
@@ -251,6 +360,294 @@ PRO_RESOURCES: dict[str, list[dict]] = {
 
 @app.get("/")
 async def index(request: Request, c: str = "all"):
+    corpus = scanner.load_corpus()
+    pro = _is_pro(request)
+    endpoints = corpus.for_plan(pro)
+    return templates.TemplateResponse(request, "index.html", {
+        "endpoint_total": len(endpoints),
+        "corpus_total": corpus.total,
+        "adult_total": corpus.adult_total,
+        "category_count": len(corpus.categories),
+        "search_types": plans.SEARCH_TYPES,
+        "user": request.state.user,
+        "plan": request.state.plan,
+        "credits": request.state.credits,
+        "pro": pro,
+    })
+
+
+@app.get("/api/scan/stream")
+async def scan_stream(request: Request, q: str = "", type: str = ""):
+    """Server-Sent Events stream of live scan results."""
+    if not q.strip():
+        return PlainTextResponse("Missing query parameter 'q'.", status_code=400)
+    if not request.state.user:
+        return JSONResponse(
+            {"error": "signin_required",
+             "message": "Log in to run a search. It only takes a moment."},
+            status_code=401)
+    kind = (type or "").strip().lower() or None
+    gate = _gate_type(request, kind or "username")
+    if gate:
+        return JSONResponse({"error": "upgrade_required", "message": gate},
+                            status_code=403)
+    ok, message = _spend(request, kind or "username", q.strip()[:80])
+    if not ok:
+        return JSONResponse({"error": "no_credits", "message": message},
+                            status_code=402)
+    return stream.stream_response(request, q.strip(), kind, _is_pro(request))
+
+
+@app.get("/api/scan")
+async def scan_once(request: Request, q: str = "", type: str = ""):
+    """Non-streaming scan — returns the whole result set as JSON."""
+    if not q.strip():
+        return PlainTextResponse("Missing query parameter 'q'.", status_code=400)
+    if not request.state.user:
+        return JSONResponse(
+            {"error": "signin_required",
+             "message": "Log in to run a search. It only takes a moment."},
+            status_code=401)
+    kind = (type or "").strip().lower() or None
+    gate = _gate_type(request, kind or "username")
+    if gate:
+        return JSONResponse({"error": "upgrade_required", "message": gate},
+                            status_code=403)
+    ok, message = _spend(request, kind or "username", q.strip()[:80])
+    if not ok:
+        return JSONResponse({"error": "no_credits", "message": message},
+                            status_code=402)
+    try:
+        result = await scanner.scan(q.strip(), kind=kind, pro=_is_pro(request))
+    except scanner.InputError as exc:
+        return PlainTextResponse(str(exc), status_code=400)
+    except Exception as exc:  # noqa: BLE001
+        return PlainTextResponse(f"{type(exc).__name__}: {exc}", status_code=502)
+    _save_scan(request, result)
+    return {
+        "query": result.query,
+        "kind": result.kind,
+        "value": result.value,
+        "checked": result.checked,
+        "total": result.total,
+        "found": result.found,
+        "elapsed": round(result.elapsed, 2),
+        "categories": result.categories,
+        "results": [
+            {
+                "id": h.endpoint_id,
+                "name": h.name,
+                "category": h.category,
+                "status": h.status,
+                "url": h.url,
+                "detail": h.detail,
+                "ms": h.ms,
+                "display_name": h.display_name,
+                "avatar": h.avatar,
+                "meta": h.meta,
+            }
+            for h in result.hits
+        ],
+    }
+
+
+def _scan_payload(result: scanner.ScanResult) -> list[dict]:
+    return [
+        {
+            "id": h.endpoint_id,
+            "name": h.name,
+            "category": h.category,
+            "status": h.status,
+            "url": h.url,
+            "detail": h.detail,
+            "ms": h.ms,
+            "display_name": h.display_name,
+            "avatar": h.avatar,
+            "meta": h.meta,
+        }
+        for h in result.hits
+    ]
+
+
+def _save_scan(request: Request, result: scanner.ScanResult) -> int:
+    """Persist a scan for the signed-in user so it can be exported or filed."""
+    user = request.state.user
+    if not user:
+        return 0
+    return db.insert_scan(
+        user["id"], result.kind, result.query, result.value, result.found,
+        result.checked, result.total, result.elapsed, _scan_payload(result))
+
+
+# --------------------------------------------------------------------------
+# accounts
+# --------------------------------------------------------------------------
+
+def _auth_ctx(request: Request, **extra) -> dict:
+    ctx = {
+        "user": request.state.user,
+        "plan": request.state.plan,
+        "plan_info": request.state.plan_info,
+        "credits": request.state.credits,
+        "pro": _is_pro(request),
+    }
+    ctx.update(extra)
+    return ctx
+
+
+@app.get("/signup")
+async def signup_page(request: Request, next: str = "/"):
+    if request.state.user:
+        return RedirectResponse("/account", status_code=303)
+    return templates.TemplateResponse(request, "signup.html",
+                                      _auth_ctx(request, next=next, error=None))
+
+
+@app.post("/signup")
+async def signup_submit(request: Request, email: str = Form(""),
+                        password: str = Form(""), confirm: str = Form(""),
+                        next: str = Form("/")):
+    error = None
+    try:
+        if password != confirm:
+            raise auth.AuthError("The two passwords do not match.")
+        user = auth.create_user(email, password)
+    except auth.AuthError as exc:
+        error = str(exc)
+        return templates.TemplateResponse(request, "signup.html",
+                                          _auth_ctx(request, next=next, error=error))
+    token = auth.start_session(user["id"])
+    user = db.get_user(user["id"])
+    _refresh_credits(user)
+    target = next if next.startswith("/") and not next.startswith(("//", "/\\")) else "/"
+    resp = RedirectResponse(target, status_code=303)
+    resp.set_cookie(auth.SESSION_COOKIE, token, httponly=True, samesite="lax",
+                    max_age=auth.SESSION_TTL)
+    return resp
+
+
+@app.get("/login")
+async def login_page(request: Request, next: str = "/"):
+    if request.state.user:
+        return RedirectResponse("/account", status_code=303)
+    return templates.TemplateResponse(request, "login.html",
+                                      _auth_ctx(request, next=next, error=None))
+
+
+@app.post("/login")
+async def login_submit(request: Request, email: str = Form(""),
+                       password: str = Form(""), next: str = Form("/")):
+    try:
+        user = auth.authenticate(email, password)
+    except auth.AuthError as exc:
+        return templates.TemplateResponse(request, "login.html",
+                                          _auth_ctx(request, next=next,
+                                                    error=str(exc)))
+    token = auth.start_session(user["id"])
+    target = next if next.startswith("/") and not next.startswith(("//", "/\\")) else "/"
+    resp = RedirectResponse(target, status_code=303)
+    resp.set_cookie(auth.SESSION_COOKIE, token, httponly=True, samesite="lax",
+                    max_age=auth.SESSION_TTL)
+    return resp
+
+
+@app.post("/logout")
+@app.get("/logout")
+async def logout(request: Request):
+    auth.end_session(_session_token(request))
+    resp = RedirectResponse("/", status_code=303)
+    resp.delete_cookie(auth.SESSION_COOKIE)
+    return resp
+
+
+@app.get("/account")
+async def account_page(request: Request):
+    user = request.state.user
+    if not user:
+        return _login_redirect(request, "/account")
+
+    is_owner = user["email"] == _owner_email()
+    owner_ctx = {}
+    if is_owner:
+        owner_ctx.update({
+            "is_owner": True,
+            "all_users": db.list_users(),
+            "all_orders": db.list_orders(500),
+            "all_scans": db.recent_queries(200),
+            "plan_options": list(plans.PLANS.values()),
+            "stats": {
+                "total_users": len(db.list_users()),
+                "total_scans": len(db.recent_queries(10000)),
+                "total_orders": len(db.list_orders(1000)),
+                "pro_users": len([u for u in db.list_users() if auth.is_pro(u)]),
+            },
+        })
+
+    return templates.TemplateResponse(request, "account.html", _auth_ctx(
+        request,
+        ledger=db.credit_ledger(user["id"], 40),
+        scans=db.list_scans(user["id"], 40),
+        api_keys=db.list_api_keys(user["id"]),
+        new_key=None,
+        cases=db.list_cases(user["id"]),
+        **owner_ctx,
+    ))
+
+
+@app.post("/account/api-keys")
+async def account_new_key(request: Request, name: str = Form("default")):
+    user = request.state.user
+    if not user:
+        return _login_redirect(request, "/account")
+    if not auth.plan_of(user).get("api"):
+        return RedirectResponse("/pricing", status_code=303)
+    created = auth.create_api_key(user["id"], name)
+    return templates.TemplateResponse(request, "account.html", _auth_ctx(
+        request,
+        ledger=db.credit_ledger(user["id"], 40),
+        scans=db.list_scans(user["id"], 40),
+        api_keys=db.list_api_keys(user["id"]),
+        new_key=created["key"],
+        cases=db.list_cases(user["id"]),
+    ))
+
+
+@app.post("/account/api-keys/{key_id}/revoke")
+async def account_revoke_key(request: Request, key_id: int):
+    user = request.state.user
+    if not user:
+        return _login_redirect(request, "/account")
+    db.revoke_api_key(user["id"], key_id)
+    return RedirectResponse("/account", status_code=303)
+
+
+@app.post("/account/password")
+async def account_change_password(request: Request, current: str = Form(""),
+                                  password: str = Form(""),
+                                  confirm: str = Form("")):
+    user = request.state.user
+    if not user:
+        return _login_redirect(request, "/account")
+    error = None
+    if not auth.verify_password(current, user["password_hash"]):
+        error = "Your current password is not correct."
+    elif password != confirm:
+        error = "The two new passwords do not match."
+    elif len(password) < 8:
+        error = "Use a password of at least 8 characters."
+    if error:
+        return templates.TemplateResponse(request, "account.html", _auth_ctx(
+            request, ledger=db.credit_ledger(user["id"], 40),
+            scans=db.list_scans(user["id"], 40),
+            api_keys=db.list_api_keys(user["id"]), new_key=None,
+            cases=db.list_cases(user["id"]), password_error=error))
+    db.set_user_password(user["id"], auth.hash_password(password))
+    return RedirectResponse("/account", status_code=303)
+
+
+
+@app.get("/tools")
+async def tools_index(request: Request, c: str = "all"):
     cat = c if c in ("all", "identity", "network", "domains", "web") else "all"
     visible = TOOLS if cat == "all" else {k: v for k, v in TOOLS.items() if v["cat"] == cat}
     breach_count = len(services._BREACH_CACHE.get("data") or [])
@@ -259,7 +656,7 @@ async def index(request: Request, c: str = "all"):
             breach_count = len(services.breach_catalog())
         except Exception:  # noqa: BLE001
             breach_count = 0
-    return templates.TemplateResponse(request, "index.html", {
+    return templates.TemplateResponse(request, "tools.html", {
         "tools": TOOLS,
         "visible_tools": visible,
         "cat": cat,
@@ -278,8 +675,8 @@ async def resources(request: Request):
 
 @app.get("/resources/private")
 async def resources_private(request: Request):
-    if not db.has_pro():
-        return RedirectResponse("/pro", status_code=303)
+    if not _is_pro(request):
+        return RedirectResponse("/pricing", status_code=303)
     return templates.TemplateResponse(request, "resources_private.html", {
         "pro_resources": PRO_RESOURCES,
     })
@@ -295,6 +692,7 @@ async def tool_page(request: Request, tool_id: str, q: str = ""):
         "tool": TOOLS[tool_id],
         "q": q,
         "results": None,
+        "endpoints_total": scanner.load_corpus().total,
     })
 
 
@@ -303,7 +701,7 @@ async def tool_run(request: Request, tool_id: str, target: str = Form("")):
     if tool_id not in TOOLS:
         return PlainTextResponse("Unknown tool", status_code=404)
     target = target.strip()
-    pro = db.has_pro()
+    pro = _is_pro(request)
     results = None
     if not target:
         results = _done("Input problem", "The input was empty — enter something to look up.")
@@ -352,42 +750,228 @@ async def tool_run(request: Request, tool_id: str, target: str = Form("")):
         "tool": TOOLS[tool_id],
         "q": target,
         "results": results,
+        "endpoints_total": scanner.load_corpus().total,
     })
 
 
 # --------------------------------------------------------------------------
-# Pro tier
+# pricing and crypto checkout
 # --------------------------------------------------------------------------
+
+CRYPTO_OPTIONS = [
+    {
+        "code": "ETH",
+        "name": "Ethereum",
+        "symbol": "ETH",
+        "icon": "◆",
+        "coingecko": "ethereum",
+        "address": "0x3bcC6F90F5fc09FDeAfB4AECF2EA367Ed32E12D4",
+        "note": "Send on the Ethereum mainnet (ERC-20 network).",
+    },
+    {
+        "code": "BTC",
+        "name": "Bitcoin",
+        "symbol": "BTC",
+        "icon": "₿",
+        "coingecko": "bitcoin",
+        "address": "bc1qpw7n2ck6a6vxc6vm5jhm5tf07kd8430ctt3uyl",
+        "note": "Send on the Bitcoin network (native SegWit address).",
+    },
+    {
+        "code": "SOL",
+        "name": "Solana",
+        "symbol": "SOL",
+        "icon": "◎",
+        "coingecko": "solana",
+        "address": "32DebfnE2WBVFwVXsiwNEn4DyXHN9moeBLbpcr7W4sEL",
+        "note": "Send on the Solana mainnet.",
+    },
+    {
+        "code": "TRX",
+        "name": "Tron",
+        "symbol": "TRX",
+        "icon": "▲",
+        "coingecko": "tron",
+        "address": "TBvY5nkA8viFTAANHPobL4e7Czjadkbs37",
+        "note": "Send on the Tron network (TRC-20).",
+    },
+]
+
+CRYPTO_BY_CODE = {c["code"]: c for c in CRYPTO_OPTIONS}
+_RATE_CACHE: dict = {"data": None, "ts": 0.0}
+
+
+def crypto_rates() -> dict:
+    """USD prices for the accepted coins. Keyless, cached for 10 minutes."""
+    now = time.time()
+    if _RATE_CACHE["data"] and now - _RATE_CACHE["ts"] < 600:
+        return _RATE_CACHE["data"]
+    ids = ",".join(c["coingecko"] for c in CRYPTO_OPTIONS)
+    try:
+        r = httpx.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params={"ids": ids, "vs_currencies": "usd"},
+            timeout=8.0, headers={"User-Agent": services.UA})
+        r.raise_for_status()
+        data = r.json()
+        out = {}
+        for c in CRYPTO_OPTIONS:
+            value = (data.get(c["coingecko"]) or {}).get("usd")
+            if value:
+                out[c["code"]] = float(value)
+        if out:
+            _RATE_CACHE.update(data=out, ts=now)
+            return out
+    except Exception:  # noqa: BLE001 — the price is a convenience, not a gate
+        pass
+    return _RATE_CACHE["data"] or {}
+
+
+def _crypto_amount(usd: float, code: str, rates: dict) -> str:
+    price = rates.get(code)
+    if not price:
+        return "—"
+    amount = usd / price
+    if code == "BTC":
+        return f"{amount:.8f} BTC"
+    if code == "ETH":
+        return f"{amount:.6f} ETH"
+    if code == "SOL":
+        return f"{amount:.4f} SOL"
+    return f"{amount:.2f} TRX"
+
+
+def _plan_price(plan_id: str) -> float:
+    plan = plans.get_plan(plan_id)
+    raw = plan["price"].replace("$", "").replace("/mo", "").strip()
+    try:
+        return float(raw)
+    except ValueError:
+        return 0.0
+
+
+@app.get("/pricing")
+async def pricing_page(request: Request):
+    rates = crypto_rates()
+    return templates.TemplateResponse(request, "pricing.html", _auth_ctx(
+        request,
+        plan_cards=[_pricing_card(p, rates) for p in plans.PLANS.values()],
+        crypto_options=CRYPTO_OPTIONS,
+        search_types=plans.SEARCH_TYPES,
+    ))
+
+
+def _pricing_card(plan: dict, rates: dict) -> dict:
+    usd = _plan_price(plan["id"])
+    out = dict(plan)
+    out["usd"] = usd
+    out["crypto_amounts"] = {
+        c["code"]: _crypto_amount(usd, c["code"], rates) for c in CRYPTO_OPTIONS
+    } if usd else {}
+    return out
+
 
 @app.get("/pro")
 async def pro_page(request: Request):
+    """Legacy operator licence page — kept so an owner can unlock Pro site-wide."""
     return templates.TemplateResponse(request, "pro.html", {
         "new_key": None,
         "licenses": db.list_licenses(),
+        "user": request.state.user,
+        "plan": request.state.plan,
+        "plan_info": request.state.plan_info,
+        "credits": request.state.credits,
+        "pro": _is_pro(request),
     })
 
 
-# crypto-only checkout: price shown is the intro rate ($4.99) for the
-# launch window, then the standard $9/mo
-INTRO_PRICE = "$4.99"
-STANDARD_PRICE = "$9"
-CRYPTO_OPTIONS = [
-    {"code": "BTC", "name": "Bitcoin", "icon": "&#132076;"},
-    {"code": "XMR", "name": "Monero", "icon": "&#128477;"},
-    {"code": "LTC", "name": "Litecoin", "icon": "&#133072;"},
-]
+@app.get("/checkout")
+async def checkout_page(request: Request, plan: str = "pro"):
+    if _is_pro(request):
+        return RedirectResponse("/account", status_code=303)
+    plan_id = plan if plan in plans.PLANS else "pro"
+    if plan_id == "free":
+        return RedirectResponse("/pricing", status_code=303)
+    rates = crypto_rates()
+    info = plans.get_plan(plan_id)
+    usd = _plan_price(plan_id)
+    return templates.TemplateResponse(request, "checkout.html", _auth_ctx(
+        request,
+        crypto_options=CRYPTO_OPTIONS,
+        plan=info,
+        plan_id=plan_id,
+        usd=usd,
+        rates=rates,
+        amounts={c["code"]: _crypto_amount(usd, c["code"], rates)
+                 for c in CRYPTO_OPTIONS},
+        error=None,
+        order=None,
+    ))
 
 
-@app.get("/pro/checkout")
-async def pro_checkout(request: Request):
-    if request.state.pro:
-        return RedirectResponse("/pro", status_code=303)
-    return templates.TemplateResponse(request, "checkout.html", {
-        "crypto_options": CRYPTO_OPTIONS,
-        "intro_price": INTRO_PRICE,
-        "standard_price": STANDARD_PRICE,
-    })
+@app.post("/checkout")
+async def checkout_submit(request: Request, plan: str = Form("pro"),
+                          crypto: str = Form("ETH"), email: str = Form(""),
+                          txid: str = Form("")):
+    plan_id = plan if plan in plans.PLANS else "pro"
+    coin = CRYPTO_BY_CODE.get(crypto.upper())
+    user = request.state.user
+    error = None
+    if not coin:
+        error = "Choose one of the accepted coins."
+    elif plan_id == "free":
+        error = "The free plan does not need checkout."
+    elif not user and not email.strip():
+        error = "Enter the email address your account uses, or sign in first."
 
+    if error:
+        rates = crypto_rates()
+        usd = _plan_price(plan_id)
+        return templates.TemplateResponse(request, "checkout.html", _auth_ctx(
+            request, crypto_options=CRYPTO_OPTIONS,
+            plan=plans.get_plan(plan_id), plan_id=plan_id, usd=usd, rates=rates,
+            amounts={c["code"]: _crypto_amount(usd, c["code"], rates)
+                     for c in CRYPTO_OPTIONS},
+            error=error, order=None))
+
+    rates = crypto_rates()
+    usd = _plan_price(plan_id)
+    amount = _crypto_amount(usd, coin["code"], rates)
+    order_id = db.create_order(
+        user["id"] if user else None,
+        (user["email"] if user else email.strip()),
+        plan_id, coin["code"], coin["address"], amount, txid.strip())
+    return RedirectResponse(f"/checkout/{order_id}", status_code=303)
+
+
+@app.get("/checkout/{order_id}")
+async def checkout_order(request: Request, order_id: int):
+    order = db.get_order(order_id)
+    if not order:
+        return PlainTextResponse("Order not found", status_code=404)
+    coin = CRYPTO_BY_CODE.get(order["crypto"])
+    plan = plans.get_plan(order["plan"])
+    return templates.TemplateResponse(request, "order.html", _auth_ctx(
+        request,
+        order=order,
+        coin=coin,
+        plan=plan,
+        qr_svg=(qr.svg(coin["address"]) if coin else ""),
+    ))
+
+
+@app.post("/checkout/{order_id}/txid")
+async def checkout_submit_txid(request: Request, order_id: int,
+                               txid: str = Form("")):
+    order = db.get_order(order_id)
+    if not order:
+        return PlainTextResponse("Order not found", status_code=404)
+    if txid.strip():
+        db.set_order_status(order_id, "submitted", txid.strip())
+    return RedirectResponse(f"/checkout/{order_id}", status_code=303)
+
+
+# --- legacy operator licence (site-wide Pro unlock) ------------------------
 
 @app.post("/pro/purchase")
 async def pro_purchase(request: Request, plan: str = Form("pro")):
@@ -396,10 +980,15 @@ async def pro_purchase(request: Request, plan: str = Form("pro")):
     new_key = None
     if not db.has_pro():
         new_key = db.activate_license(plan)
-        request.state.pro = True  # mark this render as Pro immediately
+        request.state.pro = True
     return templates.TemplateResponse(request, "pro.html", {
         "new_key": new_key,
         "licenses": db.list_licenses(),
+        "user": request.state.user,
+        "plan": request.state.plan,
+        "plan_info": request.state.plan_info,
+        "credits": request.state.credits,
+        "pro": request.state.pro,
     })
 
 
@@ -410,7 +999,324 @@ async def pro_deactivate(request: Request):
     return templates.TemplateResponse(request, "pro.html", {
         "new_key": None,
         "licenses": db.list_licenses(),
+        "user": request.state.user,
+        "plan": request.state.plan,
+        "plan_info": request.state.plan_info,
+        "credits": request.state.credits,
+        "pro": request.state.pro,
     })
+
+
+@app.get("/pro/checkout")
+async def pro_checkout_legacy(request: Request):
+    return RedirectResponse("/checkout?plan=pro", status_code=303)
+
+
+# --------------------------------------------------------------------------
+# public API (v1) — X-API-Key
+# --------------------------------------------------------------------------
+
+def _api_user(request: Request) -> dict | None:
+    key = request.headers.get("x-api-key", "").strip()
+    if not key:
+        return None
+    return auth.user_for_api_key(key)
+
+
+def _api_error(message: str, status: int) -> JSONResponse:
+    return JSONResponse({"error": message}, status_code=status)
+
+
+@app.get("/api/v1/me")
+async def api_me(request: Request):
+    user = _api_user(request)
+    if not user:
+        return _api_error("missing or invalid X-API-Key", 401)
+    user = _refresh_credits(user)
+    return {
+        "email": user["email"],
+        "plan": auth.effective_plan(user),
+        "credits": auth.credits_of(user),
+        "api": True,
+        "endpoints": len(scanner.load_corpus().for_plan(auth.is_pro(user))),
+    }
+
+
+@app.get("/api/v1/corpus")
+async def api_corpus(request: Request):
+    user = _api_user(request)
+    if not user:
+        return _api_error("missing or invalid X-API-Key", 401)
+    corpus = scanner.load_corpus()
+    pro = auth.is_pro(user)
+    endpoints = corpus.for_plan(pro)
+    return {
+        "total": len(endpoints),
+        "categories": corpus.categories_for(endpoints),
+        "adult_included": pro,
+        "endpoints": [
+            {"id": e.id, "name": e.name, "category": e.category, "url": e.url}
+            for e in endpoints
+        ],
+    }
+
+
+@app.get("/api/v1/plans")
+async def api_plans(request: Request):
+    return {
+        "plans": [
+            {"id": p["id"], "name": p["name"], "price": p["price"],
+             "credits": p["credits"], "daily_credits": p["daily_credits"],
+             "features": p["features"]}
+            for p in plans.PLANS.values()
+        ],
+        "search_types": [
+            {"id": t["id"], "label": t["label"], "pro": t["pro"], "cost": t["cost"]}
+            for t in plans.SEARCH_TYPES
+        ],
+    }
+
+
+@app.get("/api/v1/scan")
+async def api_scan(request: Request, q: str = "", type: str = ""):
+    """Run a search with an API key and get the results as JSON."""
+    user = _api_user(request)
+    if not user:
+        return _api_error("missing or invalid X-API-Key", 401)
+    if not q.strip():
+        return _api_error("missing query parameter 'q'", 400)
+    kind = (type or "").strip().lower() or None
+    if kind and kind not in plans.SEARCH_TYPE_IDS:
+        return _api_error(f"unknown search type {kind!r}", 400)
+    if kind and plans.is_pro_type(kind) and not auth.is_pro(user):
+        return _api_error(
+            f"{plans.TYPE_BY_ID[kind]['label']} search requires the Pro plan", 403)
+    cost = plans.type_cost(kind or "username")
+    balance = auth.credits_of(user)
+    if balance < cost:
+        return _api_error(
+            f"insufficient credits: {cost} required, {balance} available", 402)
+    try:
+        result = await scanner.scan(q.strip(), kind=kind, pro=auth.is_pro(user))
+    except scanner.InputError as exc:
+        return _api_error(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return _api_error(f"{type(exc).__name__}: {exc}", 502)
+    auth.spend_credits(user, cost, f"api {kind or 'username'} search",
+                       q.strip()[:80])
+    db.insert_scan(user["id"], result.kind, result.query, result.value,
+                   result.found, result.checked, result.total, result.elapsed,
+                   _scan_payload(result))
+    return {
+        "query": result.query,
+        "kind": result.kind,
+        "value": result.value,
+        "found": result.found,
+        "checked": result.checked,
+        "total": result.total,
+        "elapsed": round(result.elapsed, 2),
+        "credits_remaining": auth.credits_of(db.get_user(user["id"])),
+        "results": _scan_payload(result),
+    }
+
+
+# --------------------------------------------------------------------------
+# bulk search (BETA)
+# --------------------------------------------------------------------------
+
+@app.get("/bulk")
+async def bulk_page(request: Request):
+    if not request.state.user:
+        return _login_redirect(request, "/bulk")
+    if not auth.plan_of(request.state.user).get("bulk"):
+        return RedirectResponse("/pricing", status_code=303)
+    return templates.TemplateResponse(request, "bulk.html", _auth_ctx(
+        request, results=None, error=None, kind="username",
+        search_types=plans.SEARCH_TYPES))
+
+
+@app.post("/bulk")
+async def bulk_run(request: Request, queries: str = Form(""),
+                   kind: str = Form("username")):
+    user = request.state.user
+    if not user:
+        return _login_redirect(request, "/bulk")
+    if not auth.plan_of(user).get("bulk"):
+        return RedirectResponse("/pricing", status_code=303)
+    kind = kind if kind in plans.SEARCH_TYPE_IDS else "username"
+    if plans.is_pro_type(kind) and not _is_pro(request):
+        return templates.TemplateResponse(request, "bulk.html", _auth_ctx(
+            request, results=None, kind=kind,
+            search_types=plans.SEARCH_TYPES,
+            error=f"{plans.TYPE_BY_ID[kind]['label']} search is a Pro feature."))
+
+    items = [q.strip() for q in re.split(r"[\r\n,]+", queries) if q.strip()][:50]
+    if not items:
+        return templates.TemplateResponse(request, "bulk.html", _auth_ctx(
+            request, results=None, kind=kind,
+            search_types=plans.SEARCH_TYPES,
+            error="Paste at least one query — one per line, or separated by commas."))
+
+    cost = plans.type_cost(kind) * len(items)
+    if auth.credits_of(user) < cost:
+        return templates.TemplateResponse(request, "bulk.html", _auth_ctx(
+            request, results=None, kind=kind,
+            search_types=plans.SEARCH_TYPES,
+            error=f"{len(items)} searches cost {cost} credits and your balance is "
+                  f"{auth.credits_of(user)}."))
+
+    rows: list[dict] = []
+    for item in items:
+        try:
+            result = await scanner.scan(item, kind=kind, pro=_is_pro(request))
+            _save_scan(request, result)
+            rows.append({
+                "query": item,
+                "kind": result.kind,
+                "found": result.found,
+                "checked": result.checked,
+                "total": result.total,
+                "elapsed": round(result.elapsed, 2),
+                "hits": [h for h in result.hits if h.is_hit][:25],
+                "error": "",
+            })
+        except Exception as exc:  # noqa: BLE001
+            rows.append({"query": item, "kind": kind, "found": 0, "checked": 0,
+                         "total": 0, "elapsed": 0.0, "hits": [],
+                         "error": f"{type(exc).__name__}: {exc}"})
+
+    auth.spend_credits(user, cost, f"bulk {kind} search",
+                       f"{len(items)} items")
+    request.state.credits = auth.credits_of(db.get_user(user["id"]))
+    return templates.TemplateResponse(request, "bulk.html", _auth_ctx(
+        request, results=rows, error=None, kind=kind,
+        search_types=plans.SEARCH_TYPES))
+
+
+# --------------------------------------------------------------------------
+# cloud cases
+# --------------------------------------------------------------------------
+
+@app.get("/cases")
+async def cases_page(request: Request):
+    user = request.state.user
+    if not user:
+        return _login_redirect(request, "/cases")
+    return templates.TemplateResponse(request, "cases.html", _auth_ctx(
+        request, cases=db.list_cases(user["id"]), error=None))
+
+
+@app.post("/cases")
+async def cases_create(request: Request, name: str = Form(""),
+                        notes: str = Form("")):
+    user = request.state.user
+    if not user:
+        return _login_redirect(request, "/cases")
+    name = name.strip()
+    if not name:
+        return templates.TemplateResponse(request, "cases.html", _auth_ctx(
+            request, cases=db.list_cases(user["id"]),
+            error="Give the case a name."))
+    case_id = db.create_case(user["id"], name, notes)
+    return RedirectResponse(f"/cases/{case_id}", status_code=303)
+
+
+@app.get("/cases/{case_id}")
+async def case_page(request: Request, case_id: int):
+    user = request.state.user
+    if not user:
+        return _login_redirect(request, f"/cases/{case_id}")
+    case = db.get_case(case_id, user["id"])
+    if not case:
+        return PlainTextResponse("Case not found", status_code=404)
+    return templates.TemplateResponse(request, "case.html", _auth_ctx(
+        request, case=case, items=db.list_case_items(case_id),
+        scans=db.list_scans(user["id"], 60), error=None))
+
+
+@app.post("/cases/{case_id}/delete")
+async def case_delete(request: Request, case_id: int):
+    user = request.state.user
+    if not user:
+        return _login_redirect(request, "/cases")
+    db.delete_case(case_id, user["id"])
+    return RedirectResponse("/cases", status_code=303)
+
+
+@app.post("/cases/{case_id}/items")
+async def case_add_item(request: Request, case_id: int, scan_id: int = Form(0)):
+    user = request.state.user
+    if not user:
+        return _login_redirect(request, f"/cases/{case_id}")
+    case = db.get_case(case_id, user["id"])
+    if not case:
+        return PlainTextResponse("Case not found", status_code=404)
+    scan = db.get_scan(scan_id, user["id"])
+    if not scan:
+        return templates.TemplateResponse(request, "case.html", _auth_ctx(
+            request, case=case, items=db.list_case_items(case_id),
+            scans=db.list_scans(user["id"], 60),
+            error="That scan is not in your history."))
+    db.add_case_item(case_id, scan["kind"], scan["query"], {
+        "scan_id": scan["id"],
+        "found": scan["found"],
+        "checked": scan["checked"],
+        "total": scan["total"],
+        "elapsed": scan["elapsed"],
+        "results": scan["results"],
+    })
+    return RedirectResponse(f"/cases/{case_id}", status_code=303)
+
+
+@app.post("/cases/{case_id}/items/{item_id}/delete")
+async def case_delete_item(request: Request, case_id: int, item_id: int):
+    user = request.state.user
+    if not user:
+        return _login_redirect(request, f"/cases/{case_id}")
+    db.delete_case_item(item_id, case_id, user["id"])
+    return RedirectResponse(f"/cases/{case_id}", status_code=303)
+
+
+# --------------------------------------------------------------------------
+# report export
+# --------------------------------------------------------------------------
+
+def _report_scan(request: Request, scan_id: int) -> dict | None:
+    user = request.state.user
+    if not user:
+        return None
+    return db.get_scan(scan_id, user["id"])
+
+
+@app.get("/reports/{scan_id}.pdf")
+async def report_pdf(request: Request, scan_id: int):
+    scan = _report_scan(request, scan_id)
+    if not scan:
+        return PlainTextResponse("Report not found", status_code=404)
+    if not auth.plan_of(request.state.user).get("reports"):
+        return RedirectResponse("/pricing", status_code=303)
+    data = reports.pdf_report(scan)
+    return Response(
+        data,
+        media_type="application/pdf",
+        headers={"Content-Disposition":
+                 f'attachment; filename="osint-scan-{scan_id}.pdf"'})
+
+
+@app.get("/reports/{scan_id}.docx")
+async def report_docx(request: Request, scan_id: int):
+    scan = _report_scan(request, scan_id)
+    if not scan:
+        return PlainTextResponse("Report not found", status_code=404)
+    if not auth.plan_of(request.state.user).get("reports"):
+        return RedirectResponse("/pricing", status_code=303)
+    data = reports.docx_report(scan)
+    return Response(
+        data,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition":
+                 f'attachment; filename="osint-scan-{scan_id}.docx"'})
+
 
 
 # --------------------------------------------------------------------------
@@ -448,9 +1354,9 @@ async def notes_delete(request: Request, note_id: int):
 
 @app.get("/notes/export.md")
 async def notes_export(request: Request):
-    if not db.has_pro():
-        return RedirectResponse("/pro", status_code=303)
-    lines = ["# amana notes", "", f"_Exported {len(db.list_notes())} note(s)._", ""]
+    if not _is_pro(request):
+        return RedirectResponse("/pricing", status_code=303)
+    lines = ["# OSINT Hub notes", "", f"_Exported {len(db.list_notes())} note(s)._", ""]
     for note in db.list_notes():
         lines += [
             f"## {note['target']}",
@@ -464,16 +1370,16 @@ async def notes_export(request: Request):
     return PlainTextResponse(
         body,
         media_type="text/markdown; charset=utf-8",
-        headers={"Content-Disposition": "attachment; filename=amana-notes.md"},
+        headers={"Content-Disposition": "attachment; filename=osint-hub-notes.md"},
     )
 
 
 @app.get("/history")
 async def history(request: Request):
-    limit = 500 if request.state.pro else 25
+    limit = 500 if _is_pro(request) else 25
     return templates.TemplateResponse(request, "history.html", {
         "queries": db.recent_queries(limit),
-        "pro": request.state.pro,
+        "pro": _is_pro(request),
     })
 
 
@@ -555,6 +1461,10 @@ def _admin_token() -> str:
     return os.environ.get("ADMIN_TOKEN", "admin12345")
 
 
+def _owner_email() -> str:
+    return os.environ.get("OWNER_EMAIL", "owner@osint-hub.local")
+
+
 def _admin_digest() -> str:
     secret = os.environ.get("SECRET_KEY", "osint-hub-local-secret")
     return hmac.new(
@@ -578,10 +1488,17 @@ def _admin_ctx(request: Request, **extra) -> dict:
         "recent": db.recent_queries(5000) if is_mod else [],  # admin sees ALL lookups
         "stats": db.admin_stats() if is_mod else {},
         "is_default_token": _admin_token() == "admin12345",
+        "admin_path": ADMIN_PATH,
+        # account administration
+        "users": db.list_users() if is_mod else [],
+        "orders": db.list_orders(200) if is_mod else [],
+        "plan_options": list(plans.PLANS.values()),
+        "crypto_options": CRYPTO_OPTIONS,
     }
     ctx.update(extra)
     if not is_mod:
-        ctx.update({"notes": [], "recent": [], "stats": {}})
+        ctx.update({"notes": [], "recent": [], "stats": {}, "users": [],
+                    "orders": []})
     return ctx
 
 
@@ -601,7 +1518,7 @@ async def admin_login(request: Request, token: str = Form("")):
                                           _admin_ctx(request, login_error=True))
     resp = templates.TemplateResponse(request, "admin.html", _admin_ctx(request))
     resp.set_cookie(ADMIN_COOKIE, _admin_digest(), httponly=True,
-                    samesite="lax", max_age=60 * 60 * 12)
+                    samesite="lax", max_age=60 * 60 * 12, path="/")
     return resp
 
 
@@ -647,6 +1564,140 @@ async def admin_delete_note(request: Request, note_id: int):
                                           _admin_ctx(request, login_error=True))
     db.delete_note(note_id)
     return templates.TemplateResponse(request, "admin.html", _admin_ctx(request))
+
+
+# --- crypto orders: approve / reject ---------------------------------------
+
+def _admin_guard(request: Request):
+    """Return a login page if the admin cookie is missing, else None."""
+    if _is_admin(request):
+        return None
+    return templates.TemplateResponse(request, "admin.html",
+                                      _admin_ctx(request, login_error=True))
+
+
+@app.post(ADMIN_PATH + "/orders/{order_id}/approve")
+async def admin_approve_order(request: Request, order_id: int):
+    guard = _admin_guard(request)
+    if guard:
+        return guard
+    order = db.get_order(order_id)
+    if not order:
+        return PlainTextResponse("Order not found", status_code=404)
+    if order["status"] == "approved":
+        return templates.TemplateResponse(request, "admin.html",
+                                          _admin_ctx(request))
+
+    plan_id = order["plan"] if order["plan"] in plans.PLANS else "pro"
+    db.set_order_status(order_id, "approved")
+
+    # Find the account this order belongs to — by id, then by email.
+    user = db.get_user(order["user_id"]) if order.get("user_id") else None
+    if not user and order.get("email"):
+        user = db.get_user_by_email(order["email"])
+    if user:
+        db.set_user_plan(user["id"], plan_id)
+        plan = plans.get_plan(plan_id)
+        auth.grant_credits(user["id"], plan["credits"] or 0,
+                            f"{plan['name']} plan activation", f"order:{order_id}")
+        db.adjust_credits(user["id"], 0, f"order #{order_id} approved", "")
+    return templates.TemplateResponse(request, "admin.html",
+                                      _admin_ctx(request))
+
+
+@app.post(ADMIN_PATH + "/orders/{order_id}/reject")
+async def admin_reject_order(request: Request, order_id: int):
+    guard = _admin_guard(request)
+    if guard:
+        return guard
+    order = db.get_order(order_id)
+    if not order:
+        return PlainTextResponse("Order not found", status_code=404)
+    db.set_order_status(order_id, "rejected")
+    return templates.TemplateResponse(request, "admin.html",
+                                      _admin_ctx(request))
+
+
+@app.post(ADMIN_PATH + "/orders/{order_id}/txid")
+async def admin_set_order_txid(request: Request, order_id: int,
+                               txid: str = Form("")):
+    guard = _admin_guard(request)
+    if guard:
+        return guard
+    order = db.get_order(order_id)
+    if not order:
+        return PlainTextResponse("Order not found", status_code=404)
+    db.set_order_status(order_id, order["status"], txid.strip())
+    return templates.TemplateResponse(request, "admin.html",
+                                      _admin_ctx(request))
+
+
+# --- user administration ----------------------------------------------------
+
+@app.post(ADMIN_PATH + "/users/{user_id}/plan")
+async def admin_set_user_plan(request: Request, user_id: int, plan: str = Form("free")):
+    guard = _admin_guard(request)
+    if guard:
+        return guard
+    if plan not in plans.PLANS:
+        plan = plans.DEFAULT_PLAN
+    user = db.get_user(user_id)
+    if not user:
+        return PlainTextResponse("User not found", status_code=404)
+    db.set_user_plan(user_id, plan)
+    db.adjust_credits(user_id, 0, f"plan changed to {plan} by admin", "")
+    return templates.TemplateResponse(request, "admin.html",
+                                      _admin_ctx(request))
+
+
+@app.post(ADMIN_PATH + "/users/{user_id}/credits")
+async def admin_set_user_credits(request: Request, user_id: int,
+                                  amount: str = Form("0")):
+    guard = _admin_guard(request)
+    if guard:
+        return guard
+    user = db.get_user(user_id)
+    if not user:
+        return PlainTextResponse("User not found", status_code=404)
+    try:
+        delta = int(amount)
+    except ValueError:
+        delta = 0
+    if delta:
+        db.adjust_credits(user_id, delta, "credit adjustment by admin", "")
+    return templates.TemplateResponse(request, "admin.html",
+                                      _admin_ctx(request))
+
+
+@app.post(ADMIN_PATH + "/users/{user_id}/grant-plan-credits")
+async def admin_grant_plan_credits(request: Request, user_id: int):
+    """Top a user up with the full allowance of their current plan."""
+    guard = _admin_guard(request)
+    if guard:
+        return guard
+    user = db.get_user(user_id)
+    if not user:
+        return PlainTextResponse("User not found", status_code=404)
+    plan = plans.get_plan(auth.effective_plan(user))
+    allowance = plan["credits"] or plan["daily_credits"]
+    if allowance:
+        db.adjust_credits(user_id, allowance, f"{plan['name']} credit top-up",
+                          "admin grant")
+    return templates.TemplateResponse(request, "admin.html",
+                                      _admin_ctx(request))
+
+
+@app.post(ADMIN_PATH + "/users/{user_id}/delete")
+async def admin_delete_user(request: Request, user_id: int):
+    guard = _admin_guard(request)
+    if guard:
+        return guard
+    user = db.get_user(user_id)
+    if not user:
+        return PlainTextResponse("User not found", status_code=404)
+    db.delete_user(user_id)
+    return templates.TemplateResponse(request, "admin.html",
+                                      _admin_ctx(request))
 
 
 # legacy /admin used to exist — now it, and anything under it, 404s to keep
