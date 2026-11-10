@@ -1,29 +1,31 @@
 {% macro sections(sections) %}
 {% for s in sections %}
-<section class="card">
-  <h3>{{ s.title }}</h3>
-  {% if s.kind == 'kv' %}
-    <table class="datum kv"><tbody>
-      {% for row in s['rows'] %}<tr><th>{{ row[0] }}</th><td>{{ row[1] }}</td></tr>{% endfor %}
-    </tbody></table>
-  {% elif s.kind == 'table' %}
-    <div class="scroll">
-    <table class="datum grid-t">
-      <thead><tr>{% for h in s['head'] %}<th>{{ h }}</th>{% endfor %}</tr></thead>
-      <tbody>
-        {% for row in s['rows'] %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}
-      </tbody>
-    </table>
-    </div>
-  {% elif s.kind == 'list' %}
-    <ul class="muted-list">{% for item in s['items'] %}<li>{{ item }}</li>{% endfor %}</ul>
-  {% elif s.kind == 'chips' %}
-    <div class="classchips">{% for item in s['items'] %}<span class="classchip">{{ item }}</span>{% endfor %}</div>
-  {% elif s.kind == 'code' %}
-    <pre>{{ s['text'] }}</pre>
-  {% else %}
-    <p class="muted">{{ s['text'] }}</p>
-  {% endif %}
-</section>
+<div class="panel">
+  <div class="panel-head"><h3>{{ s.title }}</h3></div>
+  <div class="panel-body">
+    {% if s.kind == 'kv' %}
+      <table class="kv"><tbody>
+        {% for row in s['rows'] %}<tr><th class="lbl">{{ row[0] }}</th><td>{{ row[1] }}</td></tr>{% endfor %}
+      </tbody></table>
+    {% elif s.kind == 'table' %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr>{% for h in s['head'] %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+          <tbody>
+            {% for row in s['rows'] %}<tr>{% for cell in row %}<td class="mono">{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% elif s.kind == 'list' %}
+      <ul>{% for item in s['items'] %}<li>{{ item }}</li>{% endfor %}</ul>
+    {% elif s.kind == 'chips' %}
+      <div class="chips">{% for item in s['items'] %}<span class="chip">{{ item }}</span>{% endfor %}</div>
+    {% elif s.kind == 'code' %}
+      <pre style="overflow-x:auto;padding:12px;background:var(--code-bg,#050505);border:1px solid var(--card-border);font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">{{ s['text'] }}</pre>
+    {% else %}
+      <p class="secondary">{{ s['text'] }}</p>
+    {% endif %}
+  </div>
+</div>
 {% endfor %}
 {% endmacro %}

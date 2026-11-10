@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Create your account — OSINT Hub{% endblock %}
+{% block content %}
+<section class="page">
+  <div class="shell">
+    <div class="auth-wrap">
+      <div class="auth-panel">
+        <div class="kicker">free account</div>
+        <h1 class="auth-title">Start searching.</h1>
+        <p class="auth-lede">
+          Create an account to run OSINT searches. No card, no card details —
+          the free tier gives you {{ 5 }} credits a day and never expires.
+        </p>
+
+        {% if error %}
+        <div class="banner delbox" role="alert">
+          <strong>Could not create the account.</strong> {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="post" action="/signup" class="loginform" autocomplete="on">
+          <input type="hidden" name="next" value="{{ next or '/' }}">
+          <label class="field">
+            <span class="field-label">Email</span>
+            <input type="email" name="email" required autocomplete="email"
+                   placeholder="you@example.com" value="{{ email or '' }}">
+          </label>
+          <label class="field">
+            <span class="field-label">Password</span>
+            <input type="password" name="password" required minlength="8"
+                   autocomplete="new-password" placeholder="At least 8 characters">
+            <span class="field-hint">Use 8 characters or more. Stored as a salted PBKDF2 hash.</span>
+          </label>
+          <label class="field">
+            <span class="field-label">Confirm password</span>
+            <input type="password" name="confirm" required minlength="8"
+                   autocomplete="new-password" placeholder="Type it once more">
+          </label>
+          <button type="submit" class="btn btn--primary btn--lg btn--block">
+            Create account
+          </button>
+        </form>
+
+        <p class="auth-alt">
+          Already have an account? <a href="/login">Log in</a>
+        </p>
+        <p class="auth-fine">
+          By creating an account you agree to use the service only for lawful,
+          authorized research. We never log platform credentials, and we never
+          scrape behind a login.
+        </p>
+      </div>
+
+      <aside class="auth-aside">
+        <div class="auth-aside-inner">
+          <h2>What the free tier includes</h2>
+          <ul class="featurelist">
+            <li>Username, email, phone and domain search</li>
+            <li>5 credits every day</li>
+            <li>10 cloud cases to file your findings</li>
+            <li>737 public endpoints per sweep</li>
+          </ul>
+          <div class="auth-aside-rule"></div>
+          <h2>What Pro adds</h2>
+          <ul class="featurelist">
+            <li>Name, wallet, IP and image search</li>
+            <li>All 773 endpoints, adult sources included</li>
+            <li>API access with your own key</li>
+            <li>Bulk search and PDF / Word reports</li>
+          </ul>
+          <a href="/pricing" class="btn btn--secondary btn--block">Compare plans</a>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+{% endblock %}

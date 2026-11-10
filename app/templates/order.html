@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Order #{{ order.id }} — OSINT Hub{% endblock %}
+{% block content %}
+<section class="page order-page">
+  <div class="shell">
+    <div class="order-wrap">
+      <div class="order-main">
+        <div class="kicker">order #{{ order.id }}</div>
+        <h1 class="order-title">Send the payment.</h1>
+        <p class="order-lede">
+          Scan the QR code with your wallet, or copy the address below. Send
+          <b>exactly</b> the amount shown — then paste the transaction hash so
+          we can confirm it.
+        </p>
+
+        {% if order.status == 'approved' %}
+        <div class="banner" style="border-color: color-mix(in srgb, var(--state-ok) 45%, transparent); color: var(--state-ok);">
+          <strong>Payment approved.</strong> Your {{ plan.name }} plan is active
+          and {{ plan.credits }} credits have been added to your account.
+          <a href="/account" style="color:inherit;text-decoration:underline;">Go to your account &rarr;</a>
+        </div>
+        {% elif order.status == 'rejected' %}
+        <div class="banner delbox">
+          <strong>Order rejected.</strong> The payment could not be matched to
+          this order. If you sent funds, contact support with the transaction
+          hash and we will look again.
+        </div>
+        {% elif order.status == 'submitted' %}
+        <div class="banner" style="border-color: color-mix(in srgb, var(--state-warn) 45%, transparent); color: var(--state-warn);">
+          <strong>Transaction submitted.</strong> We are checking the payment on
+          the {{ order.crypto }} network. This usually takes a few minutes.
+        </div>
+        {% else %}
+        <div class="banner">
+          <strong>Awaiting payment.</strong> Once you submit the transaction
+          hash the order moves to <em>submitted</em> and waits for confirmation.
+        </div>
+        {% endif %}
+
+        <div class="order-paycard">
+          <div class="order-coin">
+            <span class="coin-glyph coin-glyph--xl" aria-hidden="true">{{ coin.icon if coin else '◆' }}</span>
+            <div>
+              <div class="order-coin-name">{{ coin.name if coin else order.crypto }}</div>
+              <div class="order-coin-net">{{ coin.note if coin else '' }}</div>
+            </div>
+          </div>
+
+          <div class="order-amount">
+            <span class="lbl">send exactly</span>
+            <b>{{ order.amount }}</b>
+            <span class="order-usd">for the {{ plan.name }} plan</span>
+          </div>
+
+          <div class="order-qr">
+            {{ qr_svg | safe }}
+          </div>
+
+          <div class="order-address">
+            <span class="lbl">wallet address</span>
+            <div class="order-address-row">
+              <code id="order-address">{{ order.address }}</code>
+              <button type="button" class="btn btn--sm btn--quiet" id="copy-address"
+                      data-copy="{{ order.address }}">Copy</button>
+            </div>
+          </div>
+
+          <dl class="order-meta">
+            <div><dt>Order</dt><dd>#{{ order.id }}</dd></div>
+            <div><dt>Plan</dt><dd>{{ plan.name }} — ${{ plan.price }}</dd></div>
+            <div><dt>Coin</dt><dd>{{ order.crypto }}</dd></div>
+            <div><dt>Created</dt><dd>{{ order.created_str }}</dd></div>
+            <div><dt>Status</dt><dd><span class="chip {{ 'ok' if order.status == 'approved' else ('bad' if order.status == 'rejected' else 'warn') }}">{{ order.status }}</span></dd></div>
+            {% if order.txid %}
+            <div><dt>TXID</dt><dd class="mono break">{{ order.txid }}</dd></div>
+            {% endif %}
+          </dl>
+        </div>
+
+        {% if order.status in ('pending', 'submitted') %}
+        <form method="post" action="/checkout/{{ order.id }}/txid" class="order-form">
+          <label class="field">
+            <span class="field-label">Transaction hash (TXID)</span>
+            <input type="text" name="txid" value="{{ order.txid or '' }}"
+                   placeholder="0x… or the block explorer transaction id"
+                   spellcheck="false" autocomplete="off">
+            <span class="field-hint">
+              Find it in your wallet's transaction history, or on the block
+              explorer for {{ order.crypto }}.
+            </span>
+          </label>
+          <button type="submit" class="btn btn--primary btn--lg">
+            {{ 'Update transaction hash' if order.txid else 'I have sent the payment' }}
+          </button>
+        </form>
+        {% else %}
+        <div class="order-actions">
+          <a href="/pricing" class="btn btn--secondary">Back to pricing</a>
+          {% if request.state.user %}
+          <a href="/account" class="btn btn--primary">Go to your account</a>
+          {% else %}
+          <a href="/login" class="btn btn--primary">Log in</a>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+
+      <aside class="order-aside">
+        <div class="order-aside-inner">
+          <h2>Before you send</h2>
+          <ul class="muted-list">
+            <li>Check the coin symbol matches your wallet's network.</li>
+            <li>Send the exact amount — the network fee is on top.</li>
+            <li>Keep the transaction hash until the plan is active.</li>
+            <li>Payments to the wrong chain cannot be recovered.</li>
+          </ul>
+          <div class="auth-aside-rule"></div>
+          <h2>Order details</h2>
+          <dl class="kv kv--tight">
+            <dt>Email</dt><dd>{{ order.email }}</dd>
+            <dt>Plan</dt><dd>{{ plan.name }}</dd>
+            <dt>Credits</dt><dd>{{ plan.credits }}</dd>
+            <dt>Network</dt><dd>{{ order.crypto }}</dd>
+            <dt>Address</dt><dd class="mono break">{{ order.address }}</dd>
+          </dl>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var btn = document.getElementById("copy-address");
+  if (!btn) return;
+  btn.addEventListener("click", function () {
+    var text = btn.getAttribute("data-copy") || "";
+    var done = function () {
+      btn.textContent = "Copied";
+      setTimeout(function () { btn.textContent = "Copy"; }, 1600);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () {});
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); done(); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+  });
+})();
+</script>
+{% endblock %}

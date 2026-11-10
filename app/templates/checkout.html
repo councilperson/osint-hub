@@ -1,52 +1,166 @@
 {% extends "base.html" %}
-{% block title %}Checkout — amana pro{% endblock %}
+{% block title %}Checkout — OSINT Hub {{ plan.name }}{% endblock %}
 {% block content %}
-<div class="hero">
-  <div class="kicker">checkout &middot; crypto only</div>
-  <h1>Pay with <span class="grad-text">crypto.</span></h1>
-  <p>amana accepts cryptocurrency only &mdash; no cards, no PayPal, no
-  personal data changes hands. The price below is the <strong>intro rate
-  ({{ intro_price }}/mo)</strong> for the first few weeks, then it moves to
-  {{ standard_price }}/mo.</p>
-</div>
-
-<section class="card">
-  <h3>&#128269; How this works</h3>
-  <ol class="muted-list">
-    <li>Pick a coin below. The demo address is shown so you can see the flow.</li>
-    <li>Send exactly the amount for one month of Pro.</li>
-    <li>Press <strong>&#8220;Payment sent&#8221;</strong> to complete the demo purchase &mdash;
-    the license activates instantly on this machine.</li>
-  </ol>
-  <div class="warnbox">&#9888;&#65039; <strong>Demo checkout.</strong> The addresses below are
-  placeholders and nothing is actually billed. In production you'd wire a
-  crypto gateway (e.g. BTCPay Server) to this same confirmation endpoint so
-  an on-chain webhook issues the license &mdash; the server-side gating would
-  not change.</div>
-</section>
-
-{% for co in crypto_options %}
-<section class="card">
-  <div class="toolcard-top">
-    <span class="tool-icon">{{ co.icon | safe }}</span>
-    <h3 style="margin:0">{{ co.name }} <span class="muted">({{ co.code }})</span></h3>
-    <span class="corner pro">{{ intro_price }} /mo</span>
+<section class="checkout">
+  <div class="checkout-bg" aria-hidden="true">
+    <span class="checkout-orb checkout-orb--1"></span>
+    <span class="checkout-orb checkout-orb--2"></span>
+    <span class="checkout-lines"></span>
   </div>
-  <p class="muted" style="margin-top:10px">Send exactly:</p>
-  <p><code>0.00{{ loop.index }}{{ co.code | lower }}</code></p>
-  <p class="muted" style="margin-top:10px">To this {{ co.code }} address (demo):</p>
-  <p style="word-break:break-all"><code>DEMO-{{ co.code }}-7kFqT9aVneWvM2xLpQrS8bZcH1jXyG4dN6uE0wAp</code></p>
-</section>
-{% endfor %}
 
-<section class="card">
-  <h3>&#9989; Complete the purchase</h3>
-  <p class="muted">After sending (or in this demo, after choosing your coin),
-  confirm below. Your Pro license is generated locally &mdash; no account, no
-  email, nothing leaves this machine.</p>
-  <form method="post" action="/pro/purchase">
-    <button class="btn btn-primary" type="submit" style="width:100%">&#8220;Payment sent&#8221; &mdash; activate Pro &nbsp;&#10132;</button>
-  </form>
-  <p class="muted" style="margin-top:10px"><a href="/pro">&larr; back to plans</a></p>
+  <div class="shell checkout-shell">
+    <div class="checkout-head">
+      <div class="kicker">checkout &middot; crypto only</div>
+      <h1 class="checkout-title">
+        Activate <span class="grad-text">{{ plan.name }}</span>
+      </h1>
+      <p class="checkout-lede">
+        Choose a coin, send the exact amount, submit the transaction hash.
+        Your plan and {{ plan.credits }} credits are activated as soon as the
+        payment is confirmed on-chain.
+      </p>
+    </div>
+
+    {% if error %}
+    <div class="banner delbox" role="alert">
+      <strong>Could not start the order.</strong> {{ error }}
+    </div>
+    {% endif %}
+
+    <div class="checkout-grid">
+      <!-- ------------------------------------------------------- plan -->
+      <div class="checkout-card checkout-card--plan">
+        <div class="checkout-card-head">
+          <span class="checkout-step">01</span>
+          <h2>Your plan</h2>
+        </div>
+        <div class="checkout-plan">
+          <div class="checkout-plan-name">{{ plan.name }}</div>
+          <div class="checkout-plan-price">
+            ${{ '%g' % usd }}<small>/month</small>
+          </div>
+          <ul class="featurelist">
+            {% for f in plan.features %}
+            <li>{{ f }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        <a href="/pricing" class="checkout-switch">Change plan &rarr;</a>
+      </div>
+
+      <!-- ------------------------------------------------------- coin -->
+      <div class="checkout-card checkout-card--coin">
+        <div class="checkout-card-head">
+          <span class="checkout-step">02</span>
+          <h2>Pick a coin</h2>
+        </div>
+
+        <form method="post" action="/checkout" class="checkout-form" id="checkout-form">
+          <input type="hidden" name="plan" value="{{ plan_id }}">
+
+          <div class="coin-grid">
+            {% for coin in crypto_options %}
+            <label class="coin-option">
+              <input type="radio" name="crypto" value="{{ coin.code }}"
+                     {{ 'checked' if loop.first else '' }}
+                     data-amount="{{ amounts.get(coin.code, '—') }}"
+                     data-code="{{ coin.code }}"
+                     data-symbol="{{ coin.symbol }}"
+                     data-address="{{ coin.address }}">
+              <span class="coin-option-inner">
+                <span class="coin-glyph coin-glyph--lg" aria-hidden="true">{{ coin.icon }}</span>
+                <span class="coin-option-name">{{ coin.name }}</span>
+                <span class="coin-option-code">{{ coin.code }}</span>
+                <span class="coin-option-amount" data-amount-for="{{ coin.code }}">
+                  {{ amounts.get(coin.code, '—') }}
+                </span>
+              </span>
+            </label>
+            {% endfor %}
+          </div>
+
+          <div class="checkout-rate">
+            <span class="lbl">live rate</span>
+            {% if rates %}
+              <code id="rate-note">
+                {% for code, price in rates.items() %}{{ code }} ${{ '%.2f'|format(price) }}{% if not loop.last %} &middot; {% endif %}{% endfor %}
+              </code>
+            {% else %}
+              <code class="muted">rate unavailable — amount is confirmed at order creation</code>
+            {% endif %}
+          </div>
+
+          {% if not request.state.user %}
+          <label class="field">
+            <span class="field-label">Account email</span>
+            <input type="email" name="email" required placeholder="you@example.com"
+                   value="{{ request.state.user.email if request.state.user else '' }}">
+            <span class="field-hint">
+              The plan lands on the account with this address.
+              <a href="/login">Already have one? Log in</a>.
+            </span>
+          </label>
+          {% else %}
+          <div class="checkout-orderto">
+            <span class="lbl">order for</span>
+            <b>{{ request.state.user.email }}</b>
+          </div>
+          {% endif %}
+
+          <button type="submit" class="btn btn--primary btn--lg btn--block checkout-submit">
+            Continue to payment &rarr;
+          </button>
+        </form>
+      </div>
+
+      <!-- ------------------------------------------------------- how -->
+      <div class="checkout-card checkout-card--how">
+        <div class="checkout-card-head">
+          <span class="checkout-step">03</span>
+          <h2>Then pay</h2>
+        </div>
+        <ol class="checkout-steps">
+          <li>
+            <b>Send the exact amount</b>
+            <p>The next screen shows a QR code and the wallet address for the coin you picked.</p>
+          </li>
+          <li>
+            <b>Paste the transaction hash</b>
+            <p>The TXID lets us find your payment without asking for any personal detail.</p>
+          </li>
+          <li>
+            <b>Get activated</b>
+            <p>Once the payment is confirmed, the plan and its credits appear on your account.</p>
+          </li>
+        </ol>
+        <div class="checkout-note">
+          Only the four networks below are accepted. Sending on the wrong chain
+          or the wrong amount can make the payment unrecoverable — check the
+          address and network carefully before sending.
+        </div>
+      </div>
+    </div>
+  </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var form = document.getElementById("checkout-form");
+  if (!form) return;
+  var options = form.querySelectorAll("input[name=crypto]");
+
+  function select(input) {
+    options.forEach(function (o) {
+      o.closest(".coin-option").classList.toggle("is-selected", o.checked);
+    });
+  }
+
+  options.forEach(function (input) {
+    input.addEventListener("change", function () { select(input); });
+    if (input.checked) select(input);
+  });
+})();
+</script>
 {% endblock %}

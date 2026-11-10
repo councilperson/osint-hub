@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}{{ case.name }} — OSINT Hub{% endblock %}
+{% block content %}
+<section class="page">
+  <div class="shell">
+    <div class="page-head case-head">
+      <div>
+        <div class="kicker"><a href="/cases" style="color:inherit;">cloud cases</a> / #{{ case.id }}</div>
+        <h1>{{ case.name }}</h1>
+        {% if case.notes %}<p>{{ case.notes }}</p>{% endif %}
+        <p class="muted mono" style="font-size:12px;">created {{ case.created_str }}</p>
+      </div>
+      <form method="post" action="/cases/{{ case.id }}/delete"
+            onsubmit="return confirm('Delete this case and everything in it?');">
+        <button type="submit" class="btn btn--sm btn--quiet btn-danger">Delete case</button>
+      </form>
+    </div>
+
+    {% if error %}
+    <div class="banner delbox" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <div class="account-grid">
+      <section class="panel account-panel">
+        <div class="panel-head">
+          <h3>Filed items</h3>
+        </div>
+        <div class="panel-body">
+          {% if items %}
+          <div class="case-items">
+            {% for item in items %}
+            <div class="case-item">
+              <div class="case-item-head">
+                <div>
+                  <b class="mono">{{ item.query }}</b>
+                  <span class="chip">{{ item.kind }}</span>
+                </div>
+                <div class="case-item-actions">
+                  {% if item.payload.get('scan_id') and plan_info.get('reports') %}
+                  <a href="/reports/{{ item.payload.scan_id }}.pdf" class="btn btn--sm btn--quiet">PDF</a>
+                  <a href="/reports/{{ item.payload.scan_id }}.docx" class="btn btn--sm btn--quiet">DOCX</a>
+                  {% endif %}
+                  <form method="post" action="/cases/{{ case.id }}/items/{{ item.id }}/delete">
+                    <button type="submit" class="btn btn--sm btn--quiet btn-danger">Remove</button>
+                  </form>
+                </div>
+              </div>
+              <div class="case-item-meta">
+                <span class="mono">{{ item.payload.get('found', 0) }} found</span>
+                <span class="muted mono">{{ item.created_str }}</span>
+              </div>
+              {% set hits = [] %}
+              {% for r in (item.payload.get('results') or []) %}
+                {% if r.get('status') == 'hit' %}{% set _ = hits.append(r) %}{% endif %}
+              {% endfor %}
+              {% if hits %}
+              <div class="bulk-hits">
+                {% for h in hits[:20] %}
+                <a class="bulk-hit" href="{{ h.url }}" target="_blank" rel="noopener noreferrer">
+                  <span class="bulk-hit-name">{{ h.name }}</span>
+                  <span class="bulk-hit-detail">{{ h.display_name or h.detail or h.url }}</span>
+                </a>
+                {% endfor %}
+                {% if hits|length > 20 %}
+                <span class="muted" style="font-size:12px; padding:6px 0;">+{{ hits|length - 20 }} more</span>
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="muted">Nothing filed yet. Add a scan from your history below.</p>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="panel account-panel">
+        <div class="panel-head">
+          <h3>Add a scan</h3>
+        </div>
+        <div class="panel-body">
+          {% if scans %}
+          <form method="post" action="/cases/{{ case.id }}/items" class="loginform">
+            <label class="field">
+              <span class="field-label">Scan from your history</span>
+              <select name="scan_id" class="select" required>
+                <option value="">Choose a scan…</option>
+                {% for s in scans %}
+                <option value="{{ s.id }}">{{ s.query }} — {{ s.kind }} ({{ s.found }} found, {{ s.created_str }})</option>
+                {% endfor %}
+              </select>
+            </label>
+            <button type="submit" class="btn btn--secondary">File into case</button>
+          </form>
+          {% else %}
+          <p class="muted">
+            You have no scans in your history yet.
+            <a href="/">Run a search →</a>
+          </p>
+          {% endif %}
+        </div>
+      </section>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,33 +1,101 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}amana{% endblock %}</title>
-<link rel="stylesheet" href="/static/style.css?v=6">
+<title>{% block title %}OSINT Hub{% endblock %}</title>
+<meta name="description" content="{% block description %}A live OSINT search engine: search a username, email, phone, name, wallet, IP, domain or image across hundreds of public endpoints.{% endblock %}">
+<meta name="theme-color" content="#0c0c0e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=9">
 </head>
 <body>
 {% set p = request.url.path %}
-<header class="top">
-  <a class="brand" href="/">am<b>ana</b></a>
-  <span class="spacer"></span>
-  <a class="plan-badge {{ 'pro' if request.state.pro else 'free' }}" href="/pro">{{ 'PRO' if request.state.pro else 'FREE' }}</a>
-  <nav>
-    <a href="{% if p == '/' %}#tools{% else %}/{% endif %}" class="{{ 'on' if p == '/' else '' }}">Tools</a>
-    <a href="/hibp" class="{{ 'on' if p.startswith('/hibp') else '' }}">Pwned</a>
-    <a href="/resources" class="{{ 'on' if p.startswith('/resources') else '' }}">Resources</a>
-    <a href="/notes" class="{{ 'on' if p.startswith('/notes') else '' }}">Notes</a>
-    <a href="/history" class="{{ 'on' if p.startswith('/history') else '' }}">History</a>
-  </nav>
+<header class="nav">
+  <div class="shell nav-inner">
+    <a class="brand" href="/">
+      <span class="brand-mark" aria-hidden="true">◧</span>
+      <span>osint<b>hub</b></span>
+      <span class="brand-dot" aria-hidden="true"></span>
+    </a>
+    <button class="btn btn--sm btn--quiet nav-toggle" id="nav-toggle"
+            aria-expanded="false" aria-controls="nav-links" aria-label="Open menu">☰</button>
+    <nav class="nav-links" id="nav-links">
+      <a href="/" class="{{ 'on' if p == '/' else '' }}">Search</a>
+      <a href="/tools" class="{{ 'on' if p.startswith('/tool') else '' }}">Tools</a>
+      <a href="/hibp" class="{{ 'on' if p.startswith('/hibp') else '' }}">Pwned</a>
+      <a href="/resources" class="{{ 'on' if p.startswith('/resources') else '' }}">Resources</a>
+      <a href="/notes" class="{{ 'on' if p.startswith('/notes') else '' }}">Notes</a>
+      <a href="/history" class="{{ 'on' if p.startswith('/history') else '' }}">History</a>
+      {% if request.state.user %}
+        <a href="/cases" class="{{ 'on' if p.startswith('/cases') else '' }}">Cases</a>
+        {% if request.state.plan_info and request.state.plan_info.get('bulk') %}
+        <a href="/bulk" class="{{ 'on' if p.startswith('/bulk') else '' }}">Bulk</a>
+        {% endif %}
+        <a href="/pricing" class="nav-plan {{ 'on' if p.startswith('/pricing') or p.startswith('/checkout') else '' }}">Pricing</a>
+        <a href="/account" class="nav-account {{ 'on' if p.startswith('/account') else '' }}">
+          <span class="credit-badge" title="Credits remaining">
+            <span class="credit-dot" aria-hidden="true"></span>{{ request.state.credits }}
+          </span>
+          Account
+        </a>
+      {% else %}
+        <a href="/pricing" class="nav-plan {{ 'on' if p.startswith('/pricing') or p.startswith('/checkout') else '' }}">Pricing</a>
+        <a href="/login" class="nav-login {{ 'on' if p.startswith('/login') or p.startswith('/signup') else '' }}">Log in</a>
+        <a href="/signup" class="btn btn--sm btn--primary nav-cta">Sign up free</a>
+      {% endif %}
+    </nav>
+  </div>
 </header>
-<main class="wrap">
+
+<main>
 {% block content %}{% endblock %}
 </main>
+
 <footer class="foot">
-  <p><strong>Use lawfully.</strong> amana is a public research toolbox for
-  authorized work: your own assets, consensual subjects, or scoped
-  engagements. Public sources only &mdash; no platform logins, no
-  protected-content scraping, no person tracking.</p>
+  <div class="shell">
+    <div class="foot-grid">
+      <div>
+        <h4>Product</h4>
+        <ul>
+          <li><a href="/">OSINT search</a></li>
+          <li><a href="/tools">OSINT tools</a></li>
+          <li><a href="/hibp">Breach checks</a></li>
+          <li><a href="/resources">Resource library</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Workspace</h4>
+        <ul>
+          <li><a href="/cases">Cloud cases</a></li>
+          <li><a href="/notes">Case notes</a></li>
+          <li><a href="/history">Query history</a></li>
+          <li><a href="/pricing">Plans & pricing</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Data</h4>
+        <ul>
+          <li>Public sources only</li>
+          <li>No platform logins</li>
+          <li>Stored in SQLite</li>
+          <li>No telemetry</li>
+        </ul>
+      </div>
+    </div>
+    <p class="foot-note">
+      <strong>Use lawfully.</strong> OSINT Hub is a public research tool for
+      authorized work: your own infrastructure, consensual subjects, or engagements
+      where you have permission. It exposes public pages only — no people-search
+      brokers, no location tracking, no logins, no protected-content scraping.
+      Results are leads to verify, not findings of fact.
+    </p>
+  </div>
 </footer>
+
+<script src="/static/app.js?v=9"></script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Cloud cases — OSINT Hub{% endblock %}
+{% block content %}
+<section class="page">
+  <div class="shell">
+    <div class="page-head">
+      <div class="kicker">cloud cases</div>
+      <h1>Your cases.</h1>
+      <p>
+        A case is a named workspace. File scans into it, keep the evidence
+        together, and export a report when the work is done.
+      </p>
+    </div>
+
+    {% if error %}
+    <div class="banner delbox" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/cases" class="case-create">
+      <input type="text" name="name" placeholder="Case name — e.g. Phishing infrastructure" maxlength="160" required>
+      <input type="text" name="notes" placeholder="Short description (optional)" maxlength="4000">
+      <button type="submit" class="btn btn--primary">Create case</button>
+    </form>
+
+    {% if cases %}
+    <div class="case-grid">
+      {% for c in cases %}
+      <div class="case-card">
+        <div class="case-card-head">
+          <a href="/cases/{{ c.id }}" class="case-card-name">{{ c.name }}</a>
+          <form method="post" action="/cases/{{ c.id }}/delete"
+                onsubmit="return confirm('Delete this case and everything in it?');">
+            <button type="submit" class="btn btn--sm btn--quiet btn-danger">Delete</button>
+          </form>
+        </div>
+        {% if c.notes %}
+        <p class="case-card-notes">{{ c.notes }}</p>
+        {% endif %}
+        <div class="case-card-meta">
+          <span class="mono">{{ c.item_count }} item{{ '' if c.item_count == 1 else 's' }}</span>
+          <span class="muted mono">created {{ c.created_str }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <h2>No cases yet.</h2>
+      <p>Create one above to start grouping your searches.</p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

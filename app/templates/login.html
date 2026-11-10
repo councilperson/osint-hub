@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Log in — OSINT Hub{% endblock %}
+{% block content %}
+<section class="page">
+  <div class="shell">
+    <div class="auth-wrap">
+      <div class="auth-panel">
+        <div class="kicker">welcome back</div>
+        <h1 class="auth-title">Log in.</h1>
+        <p class="auth-lede">
+          Sign in to run searches, spend credits and file findings into cases.
+        </p>
+
+        {% if error %}
+        <div class="banner delbox" role="alert">
+          <strong>Could not log in.</strong> {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="post" action="/login" class="loginform" autocomplete="on">
+          <input type="hidden" name="next" value="{{ next or '/' }}">
+          <label class="field">
+            <span class="field-label">Email</span>
+            <input type="email" name="email" required autocomplete="email"
+                   placeholder="you@example.com" value="{{ email or '' }}">
+          </label>
+          <label class="field">
+            <span class="field-label">Password</span>
+            <input type="password" name="password" required
+                   autocomplete="current-password" placeholder="Your password">
+          </label>
+          <button type="submit" class="btn btn--primary btn--lg btn--block">
+            Log in
+          </button>
+        </form>
+
+        <p class="auth-alt">
+          No account yet? <a href="/signup">Create one free</a>
+        </p>
+      </div>
+
+      <aside class="auth-aside">
+        <div class="auth-aside-inner">
+          <h2>Signed in, you get</h2>
+          <ul class="featurelist">
+            <li>A credit balance that refills daily</li>
+            <li>Search history and saved cases</li>
+            <li>PDF and Word reports on Pro</li>
+            <li>An API key for scripted work on Pro</li>
+          </ul>
+          <div class="auth-aside-rule"></div>
+          <p class="muted" style="font-size:13px;">
+            Sessions last 30 days. Logging out invalidates the session
+            immediately — the token is only ever stored hashed.
+          </p>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block title %}Your account — OSINT Hub{% endblock %}
+{% block content %}
+<section class="page">
+  <div class="shell">
+    <div class="page-head account-head">
+      <div>
+        <div class="kicker">account</div>
+        <h1>{{ user.email }}</h1>
+        <p>
+          {{ plan_info.name }} plan &middot; {{ plan_info.credits or plan_info.daily_credits }}
+          credits per {{ 'day' if plan_info.daily_credits else 'month' }}
+        </p>
+      </div>
+      <div class="account-balance">
+        <span class="lbl">credits</span>
+        <b>{{ credits }}</b>
+        <div class="account-balance-actions">
+          <a href="/pricing" class="btn btn--sm btn--primary">Top up</a>
+          <form method="post" action="/logout" style="display:inline;">
+            <button type="submit" class="btn btn--sm btn--quiet">Log out</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    {% if new_key %}
+    <div class="banner" style="border-color: color-mix(in srgb, var(--state-ok) 45%, transparent); color: var(--state-ok);">
+      <strong>API key created.</strong> Copy it now — it is shown only once:
+      <code class="break">{{ new_key }}</code>
+    </div>
+    {% endif %}
+
+    <div class="statgrid">
+      <div class="stat"><span class="num">{{ credits }}</span><span class="lbl">credits left</span></div>
+      <div class="stat"><span class="num">{{ plan_info.name }}</span><span class="lbl">current plan</span></div>
+      <div class="stat"><span class="num">{{ scans|length }}</span><span class="lbl">recent scans</span></div>
+      <div class="stat"><span class="num">{{ cases|length }}</span><span class="lbl">cases</span></div>
+    </div>
+
+    <div class="account-grid">
+      <!-- ------------------------------------------------ scans -->
+      <section class="panel account-panel">
+        <div class="panel-head">
+          <h3>Scan history</h3>
+          <a href="/history" class="btn btn--sm btn--quiet">All history</a>
+        </div>
+        <div class="panel-body">
+          {% if scans %}
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Query</th><th>Type</th><th>Found</th><th>When</th><th>Export</th></tr>
+              </thead>
+              <tbody>
+                {% for s in scans %}
+                <tr>
+                  <td class="mono break">{{ s.query }}</td>
+                  <td class="mono">{{ s.kind }}</td>
+                  <td class="mono">{{ s.found }}</td>
+                  <td class="muted mono">{{ s.created_str }}</td>
+                  <td>
+                    {% if plan_info.get('reports') %}
+                    <a href="/reports/{{ s.id }}.pdf" class="btn btn--sm btn--quiet">PDF</a>
+                    <a href="/reports/{{ s.id }}.docx" class="btn btn--sm btn--quiet">DOCX</a>
+                    {% else %}
+                    <span class="muted" style="font-size:12px;">Pro</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="muted">No scans yet. <a href="/">Run your first search →</a></p>
+          {% endif %}
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------ api keys -->
+      <section class="panel account-panel">
+        <div class="panel-head">
+          <h3>API keys</h3>
+        </div>
+        <div class="panel-body">
+          {% if plan_info.get('api') %}
+          <form method="post" action="/account/api-keys" class="apikey-form">
+            <input type="text" name="name" placeholder="Key name" value="default" maxlength="60">
+            <button type="submit" class="btn btn--sm btn--secondary">Create key</button>
+          </form>
+          {% if api_keys %}
+          <div class="table-wrap" style="margin-top:14px;">
+            <table>
+              <thead>
+                <tr><th>Name</th><th>Key</th><th>Last used</th><th></th></tr>
+              </thead>
+              <tbody>
+                {% for k in api_keys %}
+                <tr>
+                  <td>{{ k.name }}</td>
+                  <td class="mono">{{ k.key_masked }}</td>
+                  <td class="muted mono">{{ k.last_used_str }}</td>
+                  <td>
+                    {% if k.active %}
+                    <form method="post" action="/account/api-keys/{{ k.id }}/revoke">
+                      <button type="submit" class="btn btn--sm btn--quiet">Revoke</button>
+                    </form>
+                    {% else %}
+                    <span class="chip">revoked</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+          <p class="muted" style="margin-top:12px; font-size:13px;">
+            Send the key as <code>X-API-Key</code>. Try
+            <code>GET /api/v1/scan?q=mrbeast&type=username</code>.
+          </p>
+          {% else %}
+          <p class="muted">
+            API access is a Pro feature.
+            <a href="/pricing">Upgrade to get your own key →</a>
+          </p>
+          {% endif %}
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------ credits -->
+      <section class="panel account-panel">
+        <div class="panel-head">
+          <h3>Credit ledger</h3>
+        </div>
+        <div class="panel-body">
+          {% if ledger %}
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Reason</th><th>Change</th><th>Balance</th><th>When</th></tr>
+              </thead>
+              <tbody>
+                {% for row in ledger %}
+                <tr>
+                  <td>{{ row.reason }}</td>
+                  <td class="mono" style="color: {{ 'var(--state-ok)' if row.delta > 0 else ('var(--state-bad)' if row.delta < 0 else 'var(--text-muted)') }};">
+                    {{ '+' if row.delta > 0 else '' }}{{ row.delta }}
+                  </td>
+                  <td class="mono">{{ row.balance }}</td>
+                  <td class="muted mono">{{ row.created_str }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="muted">No credit activity yet.</p>
+          {% endif %}
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------ cases -->
+      <section class="panel account-panel">
+        <div class="panel-head">
+          <h3>Cloud cases</h3>
+          <a href="/cases" class="btn btn--sm btn--quiet">Manage</a>
+        </div>
+        <div class="panel-body">
+          {% if cases %}
+          <ul class="muted-list">
+            {% for c in cases %}
+            <li>
+              <a href="/cases/{{ c.id }}">{{ c.name }}</a>
+              <span class="muted"> — {{ c.item_count }} item{{ '' if c.item_count == 1 else 's' }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="muted">
+            No cases yet. <a href="/cases">Create one →</a>
+          </p>
+          {% endif %}
+        </div>
+      </section>
+
+      {% if is_owner %}
+      <!-- ------------------------------------------------ owner console -->
+      <section class="panel account-panel">
+        <div class="panel-head">
+          <h3>Owner console</h3>
+          <span class="chip warn">Full access</span>
+        </div>
+        <div class="panel-body">
+          <div class="statgrid" style="margin-bottom:20px;">
+            <div class="stat"><span class="num">{{ stats.total_users }}</span><span class="lbl">accounts</span></div>
+            <div class="stat"><span class="num">{{ stats.total_scans }}</span><span class="lbl">scans</span></div>
+            <div class="stat"><span class="num">{{ stats.total_orders }}</span><span class="lbl">orders</span></div>
+            <div class="stat"><span class="num">{{ stats.pro_users }}</span><span class="lbl">Pro users</span></div>
+          </div>
+
+          <h4 style="font-family:var(--font-mono);font-size:13px;margin:16px 0 8px;">All accounts</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Email</th><th>Plan</th><th>Credits</th><th>Joined</th><th>Last seen</th><th>Actions</th></tr></thead>
+              <tbody>
+              {% for u in all_users %}
+                <tr>
+                  <td class="mono break" style="font-size:12px">{{ u.email }}</td>
+                  <td>
+                    <form method="post" action="/admin/users/{{ u.id }}/plan" style="display:flex; gap:4px;">
+                      <select name="plan" class="select" style="padding:4px 22px 4px 8px; font-size:11px; background-position: calc(100% - 12px) 50%, calc(100% - 9px) 50%;">
+                        {% for p in plan_options %}
+                        <option value="{{ p.id }}" {{ 'selected' if u.plan == p.id else '' }}>{{ p.name }}</option>
+                        {% endfor %}
+                      </select>
+                      <button class="btn btn--sm" type="submit">Set</button>
+                    </form>
+                  </td>
+                  <td>
+                    <form method="post" action="/admin/users/{{ u.id }}/credits" style="display:flex; gap:4px;">
+                      <span class="mono" style="font-size:12px; align-self:center; width:3ch;">{{ u.credits }}</span>
+                      <input type="number" name="amount" value="0" step="1"
+                             style="width:80px; padding:4px 6px; background:#0a0a0a; border:1px solid #1a1a1a; color:#fff; font-family:var(--font-mono); font-size:11px;">
+                      <button class="btn btn--sm" type="submit">&plusmn;</button>
+                    </form>
+                  </td>
+                  <td class="muted mono" style="font-size:11px">{{ u.created_str }}</td>
+                  <td class="muted mono" style="font-size:11px">
+                    {{ u.last_seen_str if u.last_seen_str else '—' }}
+                  </td>
+                  <td>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                      <form method="post" action="/admin/users/{{ u.id }}/grant-plan-credits">
+                        <button class="btn btn--sm" type="submit">Top up plan</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <h4 style="font-family:var(--font-mono);font-size:13px;margin:24px 0 8px;">Crypto orders</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>When</th><th>Email</th><th>Plan</th><th>Coin</th><th>Amount</th><th>TXID</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody>
+              {% for o in all_orders %}
+                <tr>
+                  <td class="mono">{{ o.id }}</td>
+                  <td class="muted mono" style="font-size:11px">{{ o.created_str }}</td>
+                  <td class="mono break" style="font-size:12px">{{ o.email }}</td>
+                  <td>{{ o.plan }}</td>
+                  <td class="mono">{{ o.crypto }}</td>
+                  <td class="mono" style="font-size:11px">{{ o.amount }}</td>
+                  <td class="mono break" style="font-size:10px; max-width:180px">{{ o.txid or '—' }}</td>
+                  <td><span class="chip {{ 'ok' if o.status == 'approved' else ('bad' if o.status == 'rejected' else 'warn') }}">{{ o.status }}</span></td>
+                  <td>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                      <form method="post" action="/admin/orders/{{ o.id }}/approve">
+                        <button class="btn btn--sm btn--primary" type="submit">Approve</button>
+                      </form>
+                      <form method="post" action="/admin/orders/{{ o.id }}/reject">
+                        <button class="btn btn--sm btn--danger" type="submit">Reject</button>
+                      </form>
+                      <form method="post" action="/admin/orders/{{ o.id }}/txid" style="display:flex; gap:4px;">
+                        <input type="text" name="txid" placeholder="TXID" value="{{ o.txid or '' }}"
+                               style="width:150px; padding:4px 6px; background:#0a0a0a; border:1px solid #1a1a1a; color:#fff; font-family:var(--font-mono); font-size:10px;">
+                        <button class="btn btn--sm" type="submit">Set</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <h4 style="font-family:var(--font-mono);font-size:13px;margin:24px 0 8px;">All scans (latest 200)</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>When</th><th>User</th><th>Type</th><th>Query</th><th>Found</th></tr></thead>
+              <tbody>
+              {% for s in all_scans %}
+                <tr>
+                  <td class="muted mono" style="font-size:11px">{{ s.created_str }}</td>
+                  <td class="mono break" style="font-size:12px">{{ s.email }}</td>
+                  <td class="mono">{{ s.kind }}</td>
+                  <td class="mono break">{{ s.query }}</td>
+                  <td class="mono">{{ s.found }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
+      <!-- ------------------------------------------------ password -->
+      <section class="panel account-panel">
+        <div class="panel-head">
+          <h3>Password</h3>
+        </div>
+        <div class="panel-body">
+          {% if password_error %}
+          <div class="banner delbox">{{ password_error }}</div>
+          {% endif %}
+          <form method="post" action="/account/password" class="loginform">
+            <label class="field">
+              <span class="field-label">Current password</span>
+              <input type="password" name="current" required autocomplete="current-password">
+            </label>
+            <label class="field">
+              <span class="field-label">New password</span>
+              <input type="password" name="password" required minlength="8" autocomplete="new-password">
+            </label>
+            <label class="field">
+              <span class="field-label">Confirm new password</span>
+              <input type="password" name="confirm" required minlength="8" autocomplete="new-password">
+            </label>
+            <button type="submit" class="btn btn--secondary">Update password</button>
+          </form>
+        </div>
+      </section>
+    </div>
+  </div>
+</section>
+{% endblock %}

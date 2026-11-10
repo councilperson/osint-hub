@@ -1,57 +1,54 @@
 {% extends "base.html" %}
 {% from "_sections.html" import sections %}
-{% block title %}{{ tool.title }} — amana{% endblock %}
+{% block title %}{{ tool.title }} — OSINT Hub{% endblock %}
+{% block description %}{{ tool.blurb }}{% endblock %}
 {% block content %}
-<div class="layout">
-  <aside class="sidebar">
-    <h4>Listings</h4>
-    {% for tid, t in tools.items() %}
-    <a class="side-link {{ 'active' if tid == tool_id else '' }}" href="/tool/{{ tid }}">
-      <span class="mini">{{ t.icon | safe }}</span>
-      <span>{{ t.title }}</span>
-    </a>
-    {% endfor %}
-    <h4 style="margin-top:16px">Breaches</h4>
-    <a class="side-link {{ 'active' if tool_id == 'hibp' else '' }}" href="/hibp">
-      <span class="mini">&#128273;</span><span>Have I Been Pwned</span>
-    </a>
-  </aside>
-
-  <section class="toolmain">
-    <h1><span class="grad-text">{{ tool.icon | safe }}</span> {{ tool.title }}</h1>
-    <p class="muted">{{ tool.blurb }}</p>
+<div class="page">
+  <div class="shell">
+    <div class="page-head">
+      <h1><span aria-hidden="true">{{ tool.icon | safe }}</span> {{ tool.title }}</h1>
+      <p>{{ tool.blurb }}</p>
+    </div>
 
     {% if tool_id == 'username' and not request.state.pro %}
-    <div class="provelcro">
-      &#128230; Free check covers <strong>10 of 19 platforms</strong>, one handle at a time.
-      <a href="/pro">Go Pro &rarr; all 19 platforms + batch checking</a>
+    <div class="banner">
+      <strong>Free check covers 10 of 19 platforms</strong>, one handle at a time.
+      <a href="/pro">Go Pro &rarr; all 19 platforms + batch checking</a>.
+      For a full {{ endpoints_total }}-endpoint sweep, use the
+      <a href="/?q=yourhandle">live search engine</a>.
     </div>
     {% endif %}
 
-    <form method="post" action="/tool/{{ tool_id }}" class="querybar">
-      <input type="text" name="target" value="{{ q }}" placeholder="{{ tool.placeholder }}{{ ' — or handles, comma-separated (Pro)' if tool_id == 'username' and request.state.pro else '' }}"
+    <form method="post" action="/tool/{{ tool_id }}" class="tool-bar">
+      <input type="text" name="target" value="{{ q }}"
+             placeholder="{{ tool.placeholder }}{{ ' — or handles, comma-separated (Pro)' if tool_id == 'username' and request.state.pro else '' }}"
              autocomplete="off" spellcheck="false" required>
-      <button type="submit">Run</button>
+      <button type="submit" class="btn btn--primary">Run</button>
     </form>
 
     {% if results %}
       {% if results.summary %}
-      <div class="chip {{ results.summary.level }}">{{ results.summary.text }}</div>
+      <div class="summary" data-level="{{ results.summary.level }}">{{ results.summary.text }}</div>
       {% endif %}
       {{ sections(results.sections) }}
 
       {% if q %}
-      <section class="card">
-        <h3>Pin a finding</h3>
-        <form method="post" action="/notes" class="pinform">
-          <input type="hidden" name="tool" value="{{ tool.title }}">
-          <input type="hidden" name="target" value="{{ q }}">
-          <textarea name="summary" rows="2" placeholder="Note for your case file (why this lookup matters)&#8230;" required></textarea>
-          <button type="submit">Save note &nbsp;&#10132;</button>
-        </form>
-      </section>
+      <div class="panel">
+        <div class="panel-head"><h3>Pin a finding</h3></div>
+        <div class="panel-body">
+          <form method="post" action="/notes">
+            <input type="hidden" name="tool" value="{{ tool.title }}">
+            <input type="hidden" name="target" value="{{ q }}">
+            <textarea name="summary" rows="2" class="mono"
+                      placeholder="Note for your case file (why this lookup matters)…"
+                      style="width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--input-border);color:var(--text-primary);font-size:13px;"
+                      required></textarea>
+            <button type="submit" class="btn btn--secondary" style="margin-top:10px;">Save note</button>
+          </form>
+        </div>
+      </div>
       {% endif %}
     {% endif %}
-  </section>
+  </div>
 </div>
 {% endblock %}

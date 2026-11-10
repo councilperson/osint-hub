@@ -1,64 +1,412 @@
 {% extends "base.html" %}
-{% from "_sections.html" import sections %}
-{% block title %}amana — a public OSINT toolbox{% endblock %}
+{% block title %}OSINT Hub — live OSINT search engine{% endblock %}
+
 {% block content %}
 <section class="hero">
-  <div class="kicker">Public sources &middot; zero accounts &middot; local only</div>
-  <h1>Open-source intelligence,<br><span class="grad-text">served clean.</span></h1>
-  <p>Pick a listing, enter a target, get the record. Everything runs on this
-  machine against free public APIs &mdash; no keys, no telemetry, no trace
-  beyond your own local log.</p>
-  <div class="hero-actions">
-    <a class="btn btn-primary" href="#tools">Browse listings &nbsp;&darr;</a>
-    <a class="btn" href="/hibp">&#128273; Pwned checks</a>
-    <a class="btn" href="/pro">&#9992; Pro</a>
+  <div class="shell">
+    <div class="eyebrow">
+      <span class="lbl">Live OSINT search engine · eight identifier types</span>
+      <strong>{{ endpoint_total }} endpoints per scan</strong>
+    </div>
+
+    <div class="hero-grid">
+      <div class="hero-left">
+        <div class="headline-wrap">
+          <h1 id="hero-heading" class="headline-fallback">A live OSINT search engine.</h1>
+          <canvas id="headline-canvas" aria-hidden="true"></canvas>
+          <button type="button" id="headline-pause" class="btn btn--quiet headline-pause"
+                  aria-label="Pause headline animation"><span>[ pause ]</span></button>
+        </div>
+
+        <p class="hero-lede text-lede">
+          Run an OSINT search on a username, email, phone, name, wallet, IP,
+          domain or image. Find matching profiles across
+          {{ endpoint_total }} public endpoints and follow the leads that matter.
+        </p>
+
+        <!-- ------------------------------------------------ type tabs -->
+        <div class="type-tabs" id="type-tabs" role="tablist" aria-label="Search type">
+          {% for t in search_types %}
+          <button type="button" class="type-tab" role="tab" data-type="{{ t.id }}"
+                  aria-selected="{{ 'true' if t.id == 'username' else 'false' }}"
+                  tabindex="{{ '0' if t.id == 'username' else '-1' }}"
+                  data-blurb="{{ t.blurb }}"
+                  data-placeholder="{{ t.placeholder }}"
+                  data-cost="{{ t.cost }}"
+                  {% if t.pro %}data-pro="1"{% endif %}
+                  {% if t.pro and not pro %}data-locked="1"{% endif %}>
+            <span class="type-tab-label">{{ t.label }}</span>
+            <span class="type-tab-cost">{{ t.cost }}c</span>
+            {% if t.pro %}
+            <span class="type-tab-lock" title="{{ 'Pro only' if not pro else 'Pro feature' }}"
+                  aria-label="{{ 'Pro only' if not pro else 'Pro feature' }}">◆</span>
+            {% endif %}
+          </button>
+          {% endfor %}
+          <a class="type-tab type-tab--bulk" href="/bulk">
+            <span class="type-tab-label">Bulk</span>
+            <span class="type-tab-beta">beta</span>
+          </a>
+        </div>
+
+        <p class="type-blurb" id="type-blurb">
+          The full endpoint sweep — every supported site is checked and matches
+          stream back live.
+        </p>
+
+        <!-- ------------------------------------------------ console -->
+        <form class="console-form" id="sweep-form" role="search"
+              aria-label="Live OSINT scan">
+          <div class="console">
+            <label class="console-label" for="sweep-input">
+              <span class="console-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="1.5"
+                     stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"></path>
+                  <path d="M21 21l-6 -6"></path>
+                </svg>
+              </span>
+              <input class="console-input" id="sweep-input" type="search" inputmode="text"
+                     placeholder="mrbeast" aria-label="Value to scan"
+                     autocomplete="off" autocorrect="off" autocapitalize="off"
+                     spellcheck="false" maxlength="200" name="q">
+            </label>
+            <span class="console-divider" aria-hidden="true"></span>
+            <button type="submit" class="btn btn--primary console-scan">
+              <span>Scan</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                   fill="none" stroke="currentColor" stroke-width="1.5"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M5 12l14 0"></path>
+                <path d="M13 18l6 -6"></path>
+                <path d="M13 6l6 6"></path>
+              </svg>
+            </button>
+          </div>
+
+          <div class="console-status">
+            <div class="console-status-text">
+              <p id="sweep-status">Ready</p>
+              <p id="sweep-substatus" class="muted">&nbsp;</p>
+            </div>
+            <button type="button" id="view-results" class="btn btn--sm btn--quiet" hidden>
+              View matches
+            </button>
+          </div>
+        </form>
+
+        <div class="sr-only" id="sweep-live" aria-live="polite" aria-atomic="true"></div>
+
+        {% if request.state.user %}
+        <p class="free-note lbl">
+          <span>{{ request.state.plan_info.name }} plan</span>
+          <span aria-hidden="true">/</span>
+          <span><b>{{ request.state.credits }}</b> credits</span>
+          <span aria-hidden="true">/</span>
+          <span>{{ endpoint_total }} endpoints</span>
+        </p>
+        {% else %}
+        <div class="login-gate">
+          <div class="login-gate-text">
+            <b>Sign in to run a search.</b>
+            <span>
+              The free account gives you 5 credits a day, a saved history and
+              cloud cases. No card needed.
+            </span>
+          </div>
+          <div class="login-gate-actions">
+            <a href="/signup" class="btn btn--primary">Create free account</a>
+            <a href="/login" class="btn btn--secondary">Log in</a>
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="try-row">
+          <p class="lbl" style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;">
+            <span>Try</span>
+            <button type="button" data-try="mrbeast" data-try-type="username">mrbeast</button>
+            <button type="button" data-try="nasa" data-try-type="username">nasa</button>
+            <button type="button" data-try="github" data-try-type="username">github</button>
+            <button type="button" data-try="8.8.8.8" data-try-type="ip">8.8.8.8</button>
+            <button type="button" data-try="example.com" data-try-type="domain">example.com</button>
+          </p>
+          <dl class="stat-grid">
+            <div class="flex">
+              <dt class="lbl">Endpoints</dt>
+              <dd>{{ endpoint_total }}</dd>
+            </div>
+            <div class="flex">
+              <dt class="lbl">Search types</dt>
+              <dd>{{ search_types|length }}</dd>
+            </div>
+            <div class="flex">
+              <dt class="lbl">Streaming results</dt>
+              <dd>Live</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+
+      <!-- ------------------------------------------------ live panel -->
+      <div class="sweep">
+        <div class="sweep-head">
+          <div class="sweep-state" id="sweep-state" data-state="idle">
+            <span class="sweep-state-dot" aria-hidden="true"></span>
+            <span class="lbl" id="sweep-state-label">Ready</span>
+            <div class="readout" style="min-width:9ch;">
+              <span class="readout-value" id="sweep-count">000 / {{ '%03d'|format(endpoint_total) }}</span>
+            </div>
+          </div>
+          <div class="readout" style="min-width:5ch;">
+            <span class="readout-value" id="sweep-time">00:00</span>
+            <span class="lbl readout-unit">elapsed</span>
+          </div>
+          <div class="readout readout-found" style="min-width:3ch;"
+               title="Sites where the handle answered.">
+            <span class="readout-value" id="sweep-found">000</span>
+            <span class="lbl readout-unit">sites found</span>
+          </div>
+        </div>
+
+        <div class="sweep-body" id="sweep-groups">
+          <div class="sweep-empty">
+            <p class="muted">
+              {% if request.state.user %}
+                Pick a search type and run a scan — every source is checked
+                live and the answers appear here as they land.
+              {% else %}
+                Log in to start a live sweep. Sources are checked in parallel
+                and each answer appears here as it lands.
+              {% endif %}
+            </p>
+          </div>
+        </div>
+
+        <div class="sweep-legend">
+          <span><b class="lg-dot lg-dot--hit"></b> match</span>
+          <span><b class="lg-dot lg-dot--miss"></b> no match</span>
+          <span><b class="lg-dot lg-dot--wait"></b> unresolved</span>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
-<div class="filterrow">
-  <a class="fchip {{ 'on' if cat == 'all' else '' }}" href="/?c=all">All</a>
-  {% for c, label in [("identity","Identity"), ("network","Network"), ("domains","Domains"), ("web","Web")] %}
-  <a class="fchip {{ 'on' if cat == c else '' }}" href="/?c={{ c }}">{{ label }}</a>
-  {% endfor %}
-</div>
-
-<section id="tools" class="grid">
-  {% for tid, tool in visible_tools.items() %}
-  <a class="card toolcard" href="/tool/{{ tid }}">
-    <span class="corner {{ 'pro' if tool.cat in ('identity',) else '' }}">{{ tool.cat }}</span>
-    <div class="toolcard-top">
-      <span class="tool-icon">{{ tool.icon | safe }}</span>
-      <h3 style="margin:0">{{ tool.title }}</h3>
-      <span class="arrow">&rarr;</span>
+<section class="results" id="results-section" hidden>
+  <div class="shell">
+    <div class="results-head">
+      <h2 class="results-title" id="results-title">—</h2>
+      <span class="results-meta" id="results-meta"></span>
     </div>
-    <p>{{ tool.blurb }}</p>
-    <span class="hint">Try: <code>{{ tool.placeholder }}</code></span>
-  </a>
-  {% endfor %}
-
-  <a class="card toolcard" href="/hibp">
-    <span class="corner" style="color:var(--accent);border-color:rgba(23,224,165,.4)">breaches</span>
-    <div class="toolcard-top">
-      <span class="tool-icon">&#128273;</span>
-      <h3 style="margin:0">Have I Been Pwned</h3>
-      <span class="arrow">&rarr;</span>
+    <div class="result-list" id="results-list"></div>
+    <div style="margin-top:20px;">
+      <button type="button" id="new-scan" class="btn btn--secondary">New scan</button>
     </div>
-    <p>Breach catalog with <strong>{{ breach_count }}</strong> indexed breaches,
-    a k-anonymity password checker, and (with an API key) full email-breach
-    lookups.</p>
-    <span class="hint">Password + catalog work with zero setup</span>
-  </a>
+  </div>
 </section>
 
-<div style="height:22px"></div>
+<section class="section">
+  <div class="shell">
+    <div class="section-head">
+      <h2>Eight ways to start a search.</h2>
+      <p>
+        Every search begins with one identifier. Pick the type that matches what
+        you already have — OSINT Hub runs the checks that apply to it and
+        streams back the answers.
+      </p>
+    </div>
+    <div class="type-grid">
+      {% for t in search_types %}
+      <div class="type-card">
+        <div class="type-card-head">
+          <h3>{{ t.label }}</h3>
+          {% if t.pro %}
+          <span class="chip warn">Pro</span>
+          {% else %}
+          <span class="chip ok">{{ t.cost }} credit{{ '' if t.cost == 1 else 's' }}</span>
+          {% endif %}
+        </div>
+        <p>{{ t.blurb }}</p>
+        <code class="type-card-example">{{ t.placeholder }}</code>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
 
-<section class="card">
-  <h3>House rules</h3>
-  <ul class="muted-list">
-    <li><strong>Lawful scope only.</strong> Your own infrastructure, consensual subjects, or written-authorization engagements.</li>
-    <li><strong>Public sources only.</strong> No login-walled scraping, no data brokers, no real-time person tracking.</li>
-    <li><strong>Verify before conclusions.</strong> &#8220;found?&#8221; is a lead, not proof &mdash; open the URL and confirm.</li>
-    <li><strong>Minimal logging.</strong> Only tool + target text live in an admin-controlled local log (SQLite); the admin console is on a hidden URL and never linked publicly.</li>
-  </ul>
+<section class="section">
+  <div class="shell">
+    <div class="section-head">
+      <h2>What is OSINT search?</h2>
+      <p>
+        OSINT search is the practice of starting from one identifier — a username,
+        email address or phone number — and checking open sources for the accounts
+        and public details linked to it. An OSINT search tool runs those checks for
+        you, querying hundreds of sources at once instead of one site at a time.
+      </p>
+    </div>
+    <div class="card-grid">
+      <div class="card">
+        <h3>Former names and gone accounts</h3>
+        <p>
+          Earlier names can leave traces. Sources that still expose a former handle,
+          or the remains of a deleted, suspended or banned profile, are reported
+          separately so you can tell a live account from an old one.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Linked profiles</h3>
+        <p>
+          Connections worth investigating. Compare names, links, avatars and bios
+          across results — shared details suggest a connection. Verify it before
+          treating two accounts as the same person.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Honest result classes</h3>
+        <p>
+          Every endpoint returns one of three answers: hit, miss or unresolved.
+          A site that blocks bots is never reported as a false negative — it is
+          marked unresolved so you know the answer is genuinely unknown.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="shell">
+    <div class="section-head">
+      <h2>How an OSINT search works.</h2>
+      <p>
+        Search across profiles and available exposure records. Start an on-demand
+        query, review the responses and verify findings against their sources.
+      </p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <span class="step-num">01</span>
+        <h3>You pick an identifier</h3>
+        <p>
+          Handles, emails and phone numbers are normalised. Wallets, domains and
+          IPs are validated, names are turned into handle candidates, and image
+          URLs go to the reverse-image engines.
+        </p>
+      </div>
+      <div class="step">
+        <span class="step-num">02</span>
+        <h3>Supported sources are checked</h3>
+        <p>
+          The username corpus covers {{ endpoint_total }} endpoints across
+          {{ category_count }} categories. Your query starts the lookup and
+          matches appear as responses arrive.
+        </p>
+      </div>
+      <div class="step">
+        <span class="step-num">03</span>
+        <h3>Hits are filtered and ranked</h3>
+        <p>
+          Brand accounts and placeholders are dropped. Results are grouped by
+          category and ordered by how confidently each source answered.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="shell">
+    <div class="section-head">
+      <h2>The search engine</h2>
+      <p>Query. Review. Cross-reference.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Attribute</th><th>OSINT Hub</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Endpoints per scan</td><td class="mono">{{ endpoint_total }} on your plan</td></tr>
+          <tr><td>Search types</td><td class="mono">{{ search_types|length }} — phone, email, username, name, wallet, IP, domain, image</td></tr>
+          <tr><td>Search on demand</td><td class="mono">Live, streamed over SSE</td></tr>
+          <tr><td>Result classes</td><td class="mono">hit / miss / unresolved</td></tr>
+          <tr><td>Account required</td><td class="mono">Yes — free tier available</td></tr>
+          <tr><td>Data stored</td><td class="mono">SQLite, on this server</td></tr>
+          <tr><td>Sources</td><td class="mono">Public, free, no logins</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="shell">
+    <div class="section-head">
+      <h2>Questions</h2>
+      <p>What it searches, and what it keeps.</p>
+    </div>
+    <div class="faq">
+      <details>
+        <summary>What is an OSINT search engine?</summary>
+        <p>
+          A service that takes one identifier — a username, email or phone number —
+          and checks it against a large catalogue of public sources in a single pass,
+          returning the profiles that match along with the evidence for each one.
+        </p>
+      </details>
+      <details>
+        <summary>Is an OSINT search legal?</summary>
+        <p>
+          Searching public pages for information you could have visited yourself is
+          generally lawful. What is not lawful is using it for harassment,
+          discrimination, surveillance or any other unlawful purpose. You are
+          responsible for how you use the results.
+        </p>
+      </details>
+      <details>
+        <summary>How many platforms do you cover?</summary>
+        <p>
+          {{ endpoint_total }} endpoints on your plan across {{ category_count }} categories:
+          social and messaging, creator and media, developer and tech, gaming,
+          commerce and links, and a long tail of forums and wikis. Pro accounts
+          reach all {{ corpus_total }}, including adult sources.
+        </p>
+      </details>
+      <details>
+        <summary>What does the scan actually do?</summary>
+        <p>
+          Each endpoint is a public profile URL built from the handle. The request is
+          a plain GET; the response is compared against the source's own
+          "no such account" markers. Nothing logs in and nothing reads protected
+          content.
+        </p>
+      </details>
+      <details>
+        <summary>How are results ranked?</summary>
+        <p>
+          By category first, then by how the source answered. A hit backed by an
+          explicit profile marker ranks above one inferred from a status code,
+          and unresolved endpoints are never counted as matches.
+        </p>
+      </details>
+      <details>
+        <summary>Can I search by email or phone as well?</summary>
+        <p>
+          Yes. Email and phone queries run the identity checks that apply to them —
+          mailbox and avatar signals, disposable-domain flags — while username
+          queries run the full {{ endpoint_total }}-endpoint sweep.
+        </p>
+      </details>
+      <details>
+        <summary>Do I need a card?</summary>
+        <p>
+          No. The free tier needs no payment details at all. Paid plans are
+          crypto-only — Bitcoin, Ethereum, Solana or Tron — and there is no
+          card, PayPal or bank transfer anywhere in the flow.
+        </p>
+      </details>
+    </div>
+  </div>
 </section>
 {% endblock %}

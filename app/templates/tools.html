@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}OSINT tools — OSINT Hub{% endblock %}
+{% block description %}Seven lookup tools over free public sources: domain ownership, DNS, IP intelligence, HTTP headers, usernames, email and URL analysis.{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="shell">
+    <div class="page-head">
+      <h1>OSINT tools</h1>
+      <p>
+        Seven focused lookups over free public sources. Everything runs from this
+        server, nothing is stored off-box, and no tool logs in to anything.
+      </p>
+    </div>
+
+    <div class="tool-bar" style="margin-bottom:28px;">
+      <a class="btn btn--sm {{ 'btn--primary' if cat == 'all' else 'btn--secondary' }}" href="/tools">All</a>
+      <a class="btn btn--sm {{ 'btn--primary' if cat == 'identity' else 'btn--secondary' }}" href="/tools?c=identity">Identity</a>
+      <a class="btn btn--sm {{ 'btn--primary' if cat == 'network' else 'btn--secondary' }}" href="/tools?c=network">Network</a>
+      <a class="btn btn--sm {{ 'btn--primary' if cat == 'domains' else 'btn--secondary' }}" href="/tools?c=domains">Domains</a>
+      <a class="btn btn--sm {{ 'btn--primary' if cat == 'web' else 'btn--secondary' }}" href="/tools?c=web">Web</a>
+    </div>
+
+    <div class="card-grid">
+      {% for tid, t in visible_tools.items() %}
+      <a class="card" href="/tool/{{ tid }}" style="display:block;">
+        <h3><span aria-hidden="true">{{ t.icon | safe }}</span> {{ t.title }}</h3>
+        <p>{{ t.blurb }}</p>
+        <p class="result-cat" style="margin-top:12px;">{{ t.cat }}</p>
+      </a>
+      {% endfor %}
+    </div>
+
+    <div class="banner" style="margin-top:28px;">
+      <strong>Breach data:</strong> the official Have I Been Pwned catalog and the
+      k-anonymity password check live on the
+      <a href="/hibp" style="text-decoration:underline;">Pwned page</a> —
+      {{ breach_count }} indexed breaches, no key required.
+    </div>
+  </div>
+</div>
+{% endblock %}

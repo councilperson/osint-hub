@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Pricing — OSINT Hub{% endblock %}
+{% block content %}
+<section class="page">
+  <div class="shell">
+    <div class="page-head">
+      <div class="kicker">pricing</div>
+      <h1>Pick a plan. Pay with crypto.</h1>
+      <p>
+        Every plan runs against the same public-source corpus. Free gives you a
+        daily allowance; Pro and Team unlock the Pro-only search types, the full
+        endpoint list, the API, bulk search and reports.
+      </p>
+    </div>
+
+    <div class="plans">
+      {% for plan in plan_cards %}
+      <div class="plan plan--{{ plan.id }} {{ 'is-featured' if plan.id == 'pro' else '' }}">
+        <div class="plan-name">{{ plan.name }}</div>
+        <div class="plan-price">{{ plan.price }}<small>{{ ' /mo' if plan.price != '$0' else '' }}</small></div>
+        <div class="plan-note">{{ plan.tagline }}</div>
+        <ul class="featurelist">
+          {% for f in plan.features %}
+          <li>{{ f }}</li>
+          {% endfor %}
+        </ul>
+
+        {% if plan.id == 'free' %}
+          {% if request.state.user %}
+          <a href="/" class="btn btn--secondary btn--block">Current plan</a>
+          {% else %}
+          <a href="/signup" class="btn btn--secondary btn--block">Start free</a>
+          {% endif %}
+        {% else %}
+          {% if request.state.user and request.state.plan == plan.id %}
+          <span class="btn btn--secondary btn--block is-current">Your plan</span>
+          {% else %}
+          <a href="/checkout?plan={{ plan.id }}" class="btn btn--primary btn--block">
+            Pay with crypto
+          </a>
+          {% endif %}
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if not request.state.user %}
+    <div class="banner" style="margin-top:22px;">
+      <strong>Sign in first?</strong> Checkout needs an account so the plan and
+      the credits land on the right one. <a href="/signup">Create a free account</a>.
+    </div>
+    {% endif %}
+
+    <div class="section" style="border-top:1px solid var(--border-subtle); margin-top:44px; padding-top:36px;">
+      <div class="section-head">
+        <h2>Accepted coins</h2>
+        <p>
+          Checkout is crypto-only — no cards, no PayPal, no personal data beyond
+          the email on your account. Prices are converted at the live market rate.
+        </p>
+      </div>
+      <div class="coin-strip">
+        {% for coin in crypto_options %}
+        <div class="coin-chip">
+          <span class="coin-glyph" aria-hidden="true">{{ coin.icon }}</span>
+          <span class="coin-body">
+            <b>{{ coin.name }}</b>
+            <code>{{ coin.symbol }}</code>
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="section" style="border-top:1px solid var(--border-subtle); padding-top:36px;">
+      <div class="section-head">
+        <h2>Search types and what they cost</h2>
+        <p>Every search spends credits from your balance. Pro-only types are marked.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Search type</th><th>Credits</th><th>Availability</th><th>What it checks</th></tr>
+          </thead>
+          <tbody>
+            {% for t in search_types %}
+            <tr>
+              <td class="mono">{{ t.label }}</td>
+              <td class="mono">{{ t.cost }}</td>
+              <td>
+                {% if t.pro %}
+                <span class="chip warn">Pro</span>
+                {% else %}
+                <span class="chip ok">All plans</span>
+                {% endif %}
+              </td>
+              <td class="muted">{{ t.blurb }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section" style="border-top:1px solid var(--border-subtle); padding-top:36px;">
+      <div class="section-head">
+        <h2>How the crypto checkout works</h2>
+        <p>Four steps, no account-holding middleman.</p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <span class="step-num">01</span>
+          <h3>Create the order</h3>
+          <p>Choose a plan and a coin. We calculate the exact amount at the live rate.</p>
+        </div>
+        <div class="step">
+          <span class="step-num">02</span>
+          <h3>Send the payment</h3>
+          <p>Scan the QR or copy the address. Send exactly the amount shown.</p>
+        </div>
+        <div class="step">
+          <span class="step-num">03</span>
+          <h3>Submit the TXID</h3>
+          <p>Paste the transaction hash so we can find your payment on-chain.</p>
+        </div>
+        <div class="step">
+          <span class="step-num">04</span>
+          <h3>Approval</h3>
+          <p>We confirm the transaction and activate the plan and its credits.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
