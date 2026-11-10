@@ -1,0 +1,12 @@
+.git
+__pycache__
+.pytest_cache
+.venv
+venv
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.env
+.env
+scripts/maigret_data.json

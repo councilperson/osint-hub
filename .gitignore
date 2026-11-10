@@ -1,4 +1,12 @@
 __pycache__/
 .pytest_cache/
-data/
+.venv/
+venv/
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.env
+.env
+scripts/maigret_data.json
+# data/ is tracked for data/endpoints.json; only the SQLite files above are ignored

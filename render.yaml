@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: osint-hub
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /robots.txt
+    envVars:
+      - key: OSINT_CONCURRENCY
+        value: "24"
+      - key: OSINT_TIMEOUT
+        value: "10"
+      # admin console, owner account, session signing
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: OWNER_EMAIL
+        sync: false
+      - key: OWNER_PASSWORD
+        sync: false
+      - key: HIBP_API_KEY
+        sync: false
+      # off-box DB persistence (see app/backup.py); leave unset to disable
+      - key: BACKUP_GITHUB_TOKEN
+        sync: false
+      - key: BACKUP_GITHUB_REPO
+        sync: false
+      - key: BACKUP_GIST_ID
+        sync: false
+      - key: BACKUP_INTERVAL
+        value: "300"
