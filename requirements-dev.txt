@@ -1,0 +1,5 @@
+# test-only extras: a real QR decoder for the QR tests and scripts/_probe_qr.py
+# (the app itself only needs requirements.txt)
+-r requirements.txt
+zxing-cpp>=2.2
+pillow>=10

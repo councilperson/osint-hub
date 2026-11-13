@@ -126,3 +126,52 @@ All the existing names are unchanged.
   instance.
 - `scripts/_*.py` are one-off probe scripts. They're unused by the app but
   were left in place.
+
+## Fixes, round 3 (Nov 12, 2026, evening)
+
+### Monitors and Reports showed "Internal Server Error"
+- The cause was the upload to GitHub, not the code. GitHub main (the commit
+  Render deploys) was missing four page templates: `monitors.html`,
+  `monitor_detail.html`, `reports.html` and `reseller_account_detail.html`.
+  When the server couldn't find the page file it crashed with a 500. GitHub
+  also had old copies of `bulk.html`, `order.html` (missing the order-key field
+  on the "I have sent the payment" form) and `pro.html` (the old "Checkout,
+  honestly" demo text).
+- The code on this PC was already correct. The fix is to upload the whole
+  folder so GitHub matches it.
+- New `scripts/verify_deploy.py` compares this folder with GitHub file by
+  file and lists anything missing or different. Run
+  `python scripts/verify_deploy.py councilperson/osint-hub main` after an
+  upload. It should print `OK`.
+- New `tests/test_pages.py`:
+  - checks that every template the app uses exists, so a missing page file
+    now fails the tests;
+  - opens every page in the app as a free user, a Pro user, a Team user, the
+    owner and the admin console, with sample data (scans, cases, monitors
+    with runs and hits, report templates, orders, reseller sub-accounts)
+    loaded, and fails if any page gives a server error;
+  - creates a monitor and generates a PDF report.
+
+### Crypto QR codes still didn't scan
+- The QR encoder we wrote ourselves was still broken. Its own self-test
+  could read its codes back, but real scanners (zxing and OpenCV) couldn't
+  read any of them. It has been replaced with `segno`, a standard,
+  pure-Python QR library (added to `requirements.txt`; no system packages
+  needed, so the Docker build is unchanged).
+- The QR now holds only the plain wallet address, like the receive screen in
+  Exodus. Payment links (`bitcoin:…?amount=`, `ethereum:…@1?value=`) are
+  gone, because many wallets and exchanges reject them. The amount to send is
+  still shown in large text above the code, and there's a short note under
+  the code.
+- The code is black on white with the standard 4-module white border. It's
+  slightly bigger (260 px) and scales cleanly (the SVG now has a viewBox),
+  with no filters or recolouring. The stylesheet version was bumped
+  (`style.css?v=12`) so browsers load the new CSS.
+- Checked by decoding the real order page in headless Chrome (desktop and a
+  phone-sized screen, dark mode) with two different decoders. BTC, ETH, SOL
+  and TRX each decode to exactly the payout address. Payout addresses are
+  unchanged.
+- New tests decode the QR on the order page for every coin with a real
+  decoder (zxing-cpp, listed in `requirements-dev.txt`). They're skipped
+  automatically if it isn't installed. `scripts/_probe_qr.py` does the same
+  check from the command line.
