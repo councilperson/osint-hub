@@ -9,13 +9,17 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import time
-from typing import Any
 
 from . import db, plans
 
+# 260k rounds keeps a login under a second on Render's shared free CPU.
+# Stored hashes carry their own round count, and verify() + needs_rehash()
+# let this be raised later without breaking existing accounts.
 PBKDF2_ROUNDS = 260_000
+_EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$")
 SESSION_COOKIE = "osint_session"
 SESSION_TTL = 60 * 60 * 24 * 30  # 30 days
 API_KEY_PREFIX = "osh_"
@@ -45,8 +49,17 @@ def verify_password(password: str, encoded: str) -> bool:
         salt = bytes.fromhex(salt_hex)
     except ValueError:
         return False
+    if not 1_000 <= rounds_i <= 5_000_000:
+        return False
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds_i)
     return hmac.compare_digest(digest.hex(), digest_hex)
+
+
+def needs_rehash(encoded: str) -> bool:
+    try:
+        return int(encoded.split("$", 3)[1]) < PBKDF2_ROUNDS
+    except (IndexError, ValueError):
+        return True
 
 
 # --- users ----------------------------------------------------------------
@@ -57,7 +70,7 @@ def normalise_email(email: str) -> str:
 
 def create_user(email: str, password: str) -> dict:
     email = normalise_email(email)
-    if "@" not in email or len(email) < 5 or len(email) > 190:
+    if len(email) < 5 or len(email) > 190 or not _EMAIL_RE.match(email):
         raise AuthError("Enter a valid email address.")
     if len(password) < 8:
         raise AuthError("Use a password of at least 8 characters.")
@@ -76,12 +89,23 @@ def authenticate(email: str, password: str) -> dict:
         # the address exists.
         hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), os.urandom(16), PBKDF2_ROUNDS)
         raise AuthError("That email and password do not match an account.")
-    if not verify_password(password, row["password_hash"]):
+    if not verify_password(password[:512], row["password_hash"]):
         raise AuthError("That email and password do not match an account.")
+    if needs_rehash(row["password_hash"]):
+        db.set_user_password(row["id"], hash_password(password))
     return row
 
 
 # --- sessions -------------------------------------------------------------
+
+def token_digest(token: str) -> str:
+    return _token_digest(token)
+
+
+def end_other_sessions(user_id: int, keep_token: str = "") -> None:
+    """Sign out every other device, e.g. after a password change."""
+    db.delete_sessions_for_user(user_id, _token_digest(keep_token) if keep_token else "")
+
 
 def _token_digest(token: str) -> str:
     return hashlib.sha256(("osint-session|" + token).encode("utf-8")).hexdigest()
@@ -148,6 +172,15 @@ def credits_of(user: dict | None) -> int:
     if not user:
         return 0
     return int(user.get("credits") or 0)
+
+
+def try_spend(user_id: int, amount: int, reason: str, ref: str = "") -> int | None:
+    """Atomically take credits; None when the balance does not cover them."""
+    return db.try_spend_credits(user_id, amount, reason, ref)
+
+
+def refund(user_id: int, amount: int, reason: str, ref: str = "") -> int:
+    return db.adjust_credits(user_id, abs(int(amount)), reason, ref)
 
 
 def spend_credits(user: dict | None, amount: int, reason: str, ref: str = "") -> int:

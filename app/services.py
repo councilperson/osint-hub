@@ -16,7 +16,7 @@ import ipaddress
 import re
 import time
 import urllib.parse
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 
@@ -325,19 +325,31 @@ def ip_info(target: str) -> dict:
 # --------------------------------------------------------------------------
 
 def _assert_public_host(url: str) -> None:
-    """Refuse to fetch loopback/private/link-local hosts (SSRF guard for a public deployment)."""
+    """Refuse to fetch loopback/private/link-local hosts (SSRF guard for a public
+    deployment). Checked on every redirect hop, not just the first URL."""
     import socket
-    host = urllib.parse.urlsplit(url).hostname or ""
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        raise LookupError("Could not parse that URL.") from None
+    if parts.scheme not in ("http", "https"):
+        raise LookupError("Only http:// and https:// URLs can be fetched.")
+    host = parts.hostname or ""
     if not host:
         raise LookupError("Could not parse that URL.")
     try:
         infos = socket.getaddrinfo(host, None)
-    except OSError:
+    except (OSError, UnicodeError):
         raise LookupError("Could not resolve that host.") from None
     for info in infos:
         ip = ipaddress.ip_address(info[4][0].split("%")[0])
         if not ip.is_global:
             raise LookupError("That address is private or internal, so it can't be fetched.")
+
+
+def assert_public_url(url: str) -> None:
+    """Public alias used by other modules (e.g. monitor webhooks)."""
+    _assert_public_host(url)
 
 
 def _redirect_chain(url: str, max_hops: int = 7) -> tuple[list[dict], dict]:

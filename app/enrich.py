@@ -9,14 +9,12 @@ if the API is down or the platform changed, the scan still reports the hit.
 """
 from __future__ import annotations
 
-import asyncio
-import json
 import re
 from typing import Any
 
 import httpx
 
-from .scanner import UA, _check_one  # noqa: F401  (shared UA constant)
+from .scanner import UA
 
 API_HEADERS = {
     "User-Agent": UA,

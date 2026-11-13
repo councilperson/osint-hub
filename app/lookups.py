@@ -19,7 +19,7 @@ from typing import Any
 
 import httpx
 
-from .scanner import Hit, UA, _check_one, detect_wallet
+from .scanner import Hit, UA, detect_wallet
 
 JSON_HEADERS = {"User-Agent": UA, "Accept": "application/json"}
 BROWSER_HEADERS = {

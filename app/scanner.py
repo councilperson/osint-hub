@@ -20,7 +20,8 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import AsyncIterator, Callable, Iterable
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Callable
 
 import httpx
 
@@ -36,6 +37,24 @@ UA = (
 # Override with OSINT_CONCURRENCY on constrained deployments.
 CONCURRENCY = max(4, min(80, int(os.environ.get("OSINT_CONCURRENCY", "40"))))
 PER_REQUEST_TIMEOUT = float(os.environ.get("OSINT_TIMEOUT", "8.0"))
+# How many full username sweeps may run at once. Each sweep keeps up to
+# CONCURRENCY sockets open, so on a 512 MB instance a handful is the ceiling;
+# extra sweeps wait their turn instead of exhausting memory and sockets.
+MAX_SWEEPS = max(1, min(20, int(os.environ.get("OSINT_MAX_SCANS", "3"))))
+_sweep_sems: dict[int, asyncio.Semaphore] = {}
+
+
+@asynccontextmanager
+async def sweep_slot():
+    """Hold one of the MAX_SWEEPS global sweep slots (one pool per event loop)."""
+    loop_id = id(asyncio.get_running_loop())
+    sem = _sweep_sems.get(loop_id)
+    if sem is None:
+        if len(_sweep_sems) > 8:
+            _sweep_sems.clear()
+        sem = _sweep_sems[loop_id] = asyncio.Semaphore(MAX_SWEEPS)
+    async with sem:
+        yield
 
 # A "hit" needs positive evidence. These are the signals we trust.
 STATUS_HIT_CODES = {200, 201}
@@ -579,7 +598,7 @@ async def scan(
     hits: list[Hit] = []
 
     if kind == "username":
-        async with _client(scan_headers()) as client:
+        async with sweep_slot(), _client(scan_headers()) as client:
             async for hit in iter_hits(client, endpoints, value):
                 hits.append(hit)
                 if on_progress:

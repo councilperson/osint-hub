@@ -18,7 +18,7 @@ from typing import AsyncIterator
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 
-from . import auth, db, scanner
+from . import db, scanner
 
 
 def _sse(event: str, data: dict) -> str:
@@ -56,7 +56,7 @@ async def _event_stream(
 
     try:
         if kind == "username":
-            async with scanner._client(scanner.scan_headers()) as client:
+            async with scanner.sweep_slot(), scanner._client(scanner.scan_headers()) as client:
                 async for hit in scanner.iter_hits(client, endpoints, value):
                     hits.append(hit)
                     yield _sse("result", {
@@ -91,8 +91,12 @@ async def _event_stream(
                     "found": sum(1 for h in hits if h.is_hit),
                     "elapsed": round(time.perf_counter() - started, 2),
                 })
+    except scanner.InputError as exc:
+        yield _sse("error", {"message": str(exc)})
+        return
     except Exception as exc:  # noqa: BLE001
-        yield _sse("error", {"message": f"{type(exc).__name__}: {exc}"})
+        yield _sse("error", {"message": "The search stopped unexpectedly "
+                                        f"({type(exc).__name__}). Try again in a minute."})
         return
 
     # Enrich the hits with display names, avatars and profile metadata.
@@ -164,3 +168,11 @@ def stream_response(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def error_response(message: str) -> StreamingResponse:
+    """A one-event stream that reports an input problem (nothing is charged)."""
+    async def gen():
+        yield _sse("error", {"message": message})
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache, no-transform"})
