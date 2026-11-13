@@ -1155,6 +1155,73 @@ def test_qr_encoder_round_trips() -> None:
         assert "<svg" in qr.svg(text)
 
 
+def test_qr_format_info_copies_and_dark_module() -> None:
+    """The second format-info copy must not overwrite the dark module."""
+    from app import qr
+
+    def format_bits_top_left(m):
+        bits = []
+        for i in range(15):
+            if i < 6:
+                bits.append(m[8][i])
+            elif i == 6:
+                bits.append(m[8][7])
+            elif i == 7:
+                bits.append(m[8][8])
+            elif i == 8:
+                bits.append(m[7][8])
+            else:
+                bits.append(m[14 - i][8])
+        return bits
+
+    def format_bits_second_copy(m):
+        size = len(m)
+        bits = []
+        for i in range(15):
+            if i < 7:
+                bits.append(m[size - 1 - i][8])
+            else:
+                bits.append(m[8][size - 15 + i])
+        return bits
+
+    # "A"*28 picks mask 4, whose format bit 7 is 1 — the case that used
+    # to leave the top-right copy shifted and the dark module wrong.
+    known = {qr._format_bits(mask): mask for mask in range(8)}
+    for payload in ("HELLO WORLD", "A" * 28, "0x" + "a" * 40,
+                    "bitcoin:bc1qpw7n2ck6a6vxc6vm5jhm5tf07kd8430ctt3uyl?amount=0.01"):
+        matrix = qr.make_matrix(payload)
+        size = len(matrix)
+        assert matrix[size - 8][8] == 1
+        left = format_bits_top_left(matrix)
+        right = format_bits_second_copy(matrix)
+        assert left == right
+        packed = 0
+        for i, bit in enumerate(left):
+            packed |= bit << i
+        assert packed in known
+
+
+def test_payment_uri_includes_amount() -> None:
+    from app import qr
+    eth = "0x3bcC6F90F5fc09FDeAfB4AECF2EA367Ed32E12D4"
+    btc = "bc1qpw7n2ck6a6vxc6vm5jhm5tf07kd8430ctt3uyl"
+    eth_uri = qr.payment_uri("ETH", eth, "0.010000 ETH")
+    assert eth_uri.startswith(f"ethereum:{eth}@1?")
+    assert "value=10000000000000000" in eth_uri
+    btc_uri = qr.payment_uri("BTC", btc, "0.00123456 BTC")
+    assert btc_uri == f"bitcoin:{btc}?amount=0.00123456"
+    # no rate / unknown amount still yields a scannable address URI
+    assert qr.payment_uri("ETH", eth, "—") == f"ethereum:{eth}@1"
+    assert qr.payment_uri("BTC", btc, None) == f"bitcoin:{btc}"
+    sol = "32DebfnE2WBVFwVXsiwNEn4DyXHN9moeBLbpcr7W4sEL"
+    assert qr.payment_uri("SOL", sol, "1.2500 SOL") == f"solana:{sol}?amount=1.25"
+    trx = "TBvY5nkA8viFTAANHPobL4e7Czjadkbs37"
+    assert qr.payment_uri("TRX", trx, "150.00 TRX") == f"tron:{trx}?amount=150"
+    for uri in (eth_uri, btc_uri, qr.payment_uri("SOL", sol, "1.25")):
+        assert qr.read_back(uri) == uri
+        assert "<svg" in qr.svg(uri)
+
+
 def test_pdf_and_docx_generators() -> None:
     from app import reports
     scan = {
