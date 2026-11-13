@@ -47,30 +47,27 @@
         </div>
         <div class="panel-body">
           {% if scans %}
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Query</th><th>Type</th><th>Found</th><th>When</th><th>Export</th></tr>
-              </thead>
-              <tbody>
-                {% for s in scans %}
-                <tr>
-                  <td class="mono break">{{ s.query }}</td>
-                  <td class="mono">{{ s.kind }}</td>
-                  <td class="mono">{{ s.found }}</td>
-                  <td class="muted mono">{{ s.created_str }}</td>
-                  <td>
-                    {% if plan_info.get('reports') %}
-                    <a href="/reports/{{ s.id }}.pdf" class="btn btn--sm btn--quiet">PDF</a>
-                    <a href="/reports/{{ s.id }}.docx" class="btn btn--sm btn--quiet">DOCX</a>
-                    {% else %}
-                    <span class="muted" style="font-size:12px;">Pro</span>
-                    {% endif %}
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+          <div class="item-card-grid">
+            {% for s in scans %}
+            <article class="item-card">
+              <div class="item-card-head">
+                <div class="mono break">{{ s.query }}</div>
+                <span class="chip">{{ s.kind }}</span>
+              </div>
+              <div class="item-card-meta">
+                <span>{{ s.found }} found</span>
+                <span>{{ s.created_str }}</span>
+              </div>
+              <div class="item-card-actions">
+                {% if plan_info.get('reports') %}
+                <a href="/reports/{{ s.id }}.pdf" class="btn btn--sm btn--quiet">PDF</a>
+                <a href="/reports/{{ s.id }}.docx" class="btn btn--sm btn--quiet">DOCX</a>
+                {% else %}
+                <span class="muted" style="font-size:12px;">Pro</span>
+                {% endif %}
+              </div>
+            </article>
+            {% endfor %}
           </div>
           {% else %}
           <p class="muted">No scans yet. <a href="/">Run your first search →</a></p>
@@ -85,8 +82,10 @@
         </div>
         <div class="panel-body">
           {% if plan_info.get('api') %}
+          {% if key_error %}<div class="banner delbox" role="alert">{{ key_error }}</div>{% endif %}
           <form method="post" action="/account/api-keys" class="apikey-form">
-            <input type="text" name="name" placeholder="Key name" value="default" maxlength="60">
+            <label class="sr-only" for="api-key-name">Key name</label>
+            <input id="api-key-name" type="text" name="name" placeholder="Key name" value="default" maxlength="60">
             <button type="submit" class="btn btn--sm btn--secondary">Create key</button>
           </form>
           {% if api_keys %}
@@ -187,7 +186,7 @@
 
       {% if is_owner %}
       <!-- ------------------------------------------------ owner console -->
-      <section class="panel account-panel">
+      <section class="panel account-panel" id="owner">
         <div class="panel-head">
           <h3>Owner console</h3>
           <span class="chip warn">Full access</span>
@@ -201,100 +200,87 @@
           </div>
 
           <h4 style="font-family:var(--font-mono);font-size:13px;margin:16px 0 8px;">All accounts</h4>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Email</th><th>Plan</th><th>Credits</th><th>Joined</th><th>Last seen</th><th>Actions</th></tr></thead>
-              <tbody>
-              {% for u in all_users %}
-                <tr>
-                  <td class="mono break" style="font-size:12px">{{ u.email }}</td>
-                  <td>
-                    <form method="post" action="/admin/users/{{ u.id }}/plan" style="display:flex; gap:4px;">
-                      <select name="plan" class="select" style="padding:4px 22px 4px 8px; font-size:11px; background-position: calc(100% - 12px) 50%, calc(100% - 9px) 50%;">
-                        {% for p in plan_options %}
-                        <option value="{{ p.id }}" {{ 'selected' if u.plan == p.id else '' }}>{{ p.name }}</option>
-                        {% endfor %}
-                      </select>
-                      <button class="btn btn--sm" type="submit">Set</button>
-                    </form>
-                  </td>
-                  <td>
-                    <form method="post" action="/admin/users/{{ u.id }}/credits" style="display:flex; gap:4px;">
-                      <span class="mono" style="font-size:12px; align-self:center; width:3ch;">{{ u.credits }}</span>
-                      <input type="number" name="amount" value="0" step="1"
-                             style="width:80px; padding:4px 6px; background:#0a0a0a; border:1px solid #1a1a1a; color:#fff; font-family:var(--font-mono); font-size:11px;">
-                      <button class="btn btn--sm" type="submit">&plusmn;</button>
-                    </form>
-                  </td>
-                  <td class="muted mono" style="font-size:11px">{{ u.created_str }}</td>
-                  <td class="muted mono" style="font-size:11px">
-                    {{ u.last_seen_str if u.last_seen_str else '—' }}
-                  </td>
-                  <td>
-                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                      <form method="post" action="/admin/users/{{ u.id }}/grant-plan-credits">
-                        <button class="btn btn--sm" type="submit">Top up plan</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              {% endfor %}
-              </tbody>
-            </table>
+          <div class="item-card-grid">
+            {% for u in all_users %}
+            <article class="item-card">
+              <div class="item-card-head">
+                <div class="mono break">{{ u.email }}</div>
+              </div>
+              <div class="item-card-meta">
+                <span>Joined {{ u.created_str }}</span>
+                <span>Last seen {{ u.last_seen_str if u.last_seen_str else '—' }}</span>
+              </div>
+              <div class="item-card-actions">
+                <form method="post" action="/account/owner/users/{{ u.id }}/plan" style="display:flex; gap:4px;">
+                  <select name="plan" class="select" style="padding:6px 28px 6px 10px; font-size:12px; min-width:120px; background-position: calc(100% - 12px) 50%, calc(100% - 9px) 50%;">
+                    {% for p in plan_options %}
+                    <option value="{{ p.id }}" {{ 'selected' if u.plan == p.id else '' }}>{{ p.name }}</option>
+                    {% endfor %}
+                  </select>
+                  <button class="btn btn--sm" type="submit" style="padding:6px 10px;">Set</button>
+                </form>
+                <form method="post" action="/account/owner/users/{{ u.id }}/credits" style="display:flex; gap:4px; align-items:center;">
+                  <span class="mono" style="font-size:13px; width:4ch;">{{ u.credits }}</span>
+                  <input type="number" name="amount" value="0" step="1"
+                         style="width:90px; padding:6px 8px; background:#0a0a0a; border:1px solid #1a1a1a; color:#fff; font-family:var(--font-mono); font-size:12px;">
+                  <button class="btn btn--sm" type="submit" style="padding:6px 10px;">&plusmn;</button>
+                </form>
+                <form method="post" action="/account/owner/users/{{ u.id }}/grant-plan-credits">
+                  <button class="btn btn--sm" type="submit" style="padding:6px 10px;">Top up plan</button>
+                </form>
+              </div>
+            </article>
+            {% endfor %}
           </div>
 
           <h4 style="font-family:var(--font-mono);font-size:13px;margin:24px 0 8px;">Crypto orders</h4>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>#</th><th>When</th><th>Email</th><th>Plan</th><th>Coin</th><th>Amount</th><th>TXID</th><th>Status</th><th>Actions</th></tr></thead>
-              <tbody>
-              {% for o in all_orders %}
-                <tr>
-                  <td class="mono">{{ o.id }}</td>
-                  <td class="muted mono" style="font-size:11px">{{ o.created_str }}</td>
-                  <td class="mono break" style="font-size:12px">{{ o.email }}</td>
-                  <td>{{ o.plan }}</td>
-                  <td class="mono">{{ o.crypto }}</td>
-                  <td class="mono" style="font-size:11px">{{ o.amount }}</td>
-                  <td class="mono break" style="font-size:10px; max-width:180px">{{ o.txid or '—' }}</td>
-                  <td><span class="chip {{ 'ok' if o.status == 'approved' else ('bad' if o.status == 'rejected' else 'warn') }}">{{ o.status }}</span></td>
-                  <td>
-                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                      <form method="post" action="/admin/orders/{{ o.id }}/approve">
-                        <button class="btn btn--sm btn--primary" type="submit">Approve</button>
-                      </form>
-                      <form method="post" action="/admin/orders/{{ o.id }}/reject">
-                        <button class="btn btn--sm btn--danger" type="submit">Reject</button>
-                      </form>
-                      <form method="post" action="/admin/orders/{{ o.id }}/txid" style="display:flex; gap:4px;">
-                        <input type="text" name="txid" placeholder="TXID" value="{{ o.txid or '' }}"
-                               style="width:150px; padding:4px 6px; background:#0a0a0a; border:1px solid #1a1a1a; color:#fff; font-family:var(--font-mono); font-size:10px;">
-                        <button class="btn btn--sm" type="submit">Set</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              {% endfor %}
-              </tbody>
-            </table>
+          <div class="item-card-grid">
+            {% for o in all_orders %}
+            <article class="item-card">
+              <div class="item-card-head">
+                <div class="mono">#{{ o.id }}</div>
+                <span class="chip {{ 'ok' if o.status == 'approved' else ('bad' if o.status == 'rejected' else 'warn') }}">{{ o.status }}</span>
+              </div>
+              <div class="item-card-meta">
+                <span>{{ o.created_str }}</span>
+                <span class="mono break">{{ o.email }}</span>
+                <span>{{ o.plan }}</span>
+                <span class="mono">{{ o.crypto }}</span>
+                <span class="mono">{{ o.amount }}</span>
+                <span class="mono break">TXID {{ o.txid or '—' }}</span>
+              </div>
+              <div class="item-card-actions">
+                <form method="post" action="/account/owner/orders/{{ o.id }}/approve">
+                  <button class="btn btn--sm btn--primary" type="submit" style="padding:6px 10px;">Approve</button>
+                </form>
+                <form method="post" action="/account/owner/orders/{{ o.id }}/reject">
+                  <button class="btn btn--sm btn--danger" type="submit" style="padding:6px 10px;">Reject</button>
+                </form>
+                <form method="post" action="/account/owner/orders/{{ o.id }}/txid" style="display:flex; gap:4px;">
+                  <input type="text" name="txid" placeholder="TXID" value="{{ o.txid or '' }}"
+                         style="width:180px; padding:6px 8px; background:#0a0a0a; border:1px solid #1a1a1a; color:#fff; font-family:var(--font-mono); font-size:11px;">
+                  <button class="btn btn--sm" type="submit" style="padding:6px 10px;">Set</button>
+                </form>
+              </div>
+            </article>
+            {% endfor %}
           </div>
 
           <h4 style="font-family:var(--font-mono);font-size:13px;margin:24px 0 8px;">All scans (latest 200)</h4>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>When</th><th>User</th><th>Type</th><th>Query</th><th>Found</th></tr></thead>
-              <tbody>
-              {% for s in all_scans %}
-                <tr>
-                  <td class="muted mono" style="font-size:11px">{{ s.created_str }}</td>
-                  <td class="mono break" style="font-size:12px">{{ s.email }}</td>
-                  <td class="mono">{{ s.kind }}</td>
-                  <td class="mono break">{{ s.query }}</td>
-                  <td class="mono">{{ s.found }}</td>
-                </tr>
-              {% endfor %}
-              </tbody>
-            </table>
+          <div class="item-card-grid">
+            {% for s in all_scans %}
+            <article class="item-card">
+              <div class="item-card-head">
+                <div class="mono break">{{ s.query }}</div>
+                <span class="chip">{{ s.kind }}</span>
+              </div>
+              <div class="item-card-meta">
+                <span>{{ s.created_str }}</span>
+                <span class="mono break">{{ s.email }}</span>
+                <span>{{ s.found }} found</span>
+              </div>
+            </article>
+            {% endfor %}
           </div>
         </div>
       </section>
@@ -307,7 +293,7 @@
         </div>
         <div class="panel-body">
           {% if password_error %}
-          <div class="banner delbox">{{ password_error }}</div>
+          <div class="banner delbox" role="alert">{{ password_error }}</div>
           {% endif %}
           <form method="post" action="/account/password" class="loginform">
             <label class="field">
