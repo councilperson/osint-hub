@@ -53,6 +53,29 @@ def top_up(user_id: int, amount: int = 500) -> None:
     db.adjust_credits(user_id, amount, "test top-up", "")
 
 
+def admin_client() -> TestClient:
+    """A TestClient signed in to the hidden admin console."""
+    c = TestClient(app)
+    c.post(ADMIN_PATH + "/login", data={"token": os.environ.get("ADMIN_TOKEN", "admin12345")})
+    return c
+
+
+def order_id_from(location: str) -> int:
+    """/checkout/12?k=… -> 12"""
+    import urllib.parse
+    return int(urllib.parse.urlsplit(location).path.rsplit("/", 1)[1])
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits() -> None:
+    """Each test starts with fresh login/admin attempt counters."""
+    from app import main as main_mod
+    for lim in (main_mod._login_limiter, main_mod._ip_limiter, main_mod._signup_limiter,
+                main_mod._admin_limiter, main_mod._tool_limiter,
+                main_mod._checkout_limiter, main_mod._api_limiter):
+        lim.clear()
+
+
 @pytest.fixture(autouse=True)
 def _offline_crypto_rates(monkeypatch) -> None:
     """Keep the suite offline — the live rate API is a convenience, not a gate."""
@@ -139,23 +162,25 @@ def test_tool_run_error_becomes_section(monkeypatch) -> None:
 
 # --- notes ---------------------------------------------------------------------
 def test_notes_crud() -> None:
-    client.post("/notes", data={"tool": "Domain ownership (RDAP)",
-                                "target": "example.com",
-                                "summary": "registered 1995, benign"})
-    page = client.get("/notes").text
+    c = login("notes@example.com")
+    c.post("/notes", data={"tool": "Domain ownership (RDAP)",
+                           "target": "example.com",
+                           "summary": "registered 1995, benign"})
+    page = c.get("/notes").text
     assert "registered 1995, benign" in page
     assert "example.com" in page
 
     # delete
-    notes = db.list_notes()
-    note_id = notes[0]["id"]
-    client.post(f"/notes/{note_id}/delete")
-    assert all(n["id"] != note_id for n in db.list_notes())
+    uid = db.get_user_by_email("notes@example.com")["id"]
+    note_id = db.list_notes(uid)[0]["id"]
+    c.post(f"/notes/{note_id}/delete")
+    assert all(n["id"] != note_id for n in db.list_notes(uid))
 
 
 def test_empty_note_ignored() -> None:
+    c = login("notes-empty@example.com")
     before = len(db.list_notes())
-    client.post("/notes", data={"tool": "", "target": "", "summary": ""})
+    c.post("/notes", data={"tool": "", "target": "", "summary": ""})
     assert len(db.list_notes()) == before
 
 
@@ -301,19 +326,27 @@ def test_pro_purchase_gates_and_deactivate() -> None:
     assert r.status_code == 303
     assert "/pricing" in r.headers["location"]
 
-    # demo purchase activates a license server-side
-    r = c.post("/pro/purchase", data={"plan": "pro"})
+    # an anonymous visitor can NOT switch on site-wide Pro (it used to be free)
+    r = c.post("/pro/purchase", data={"plan": "pro"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert db.has_pro() is False
+
+    # the admin can: a license is activated server-side
+    admin = admin_client()
+    r = admin.post("/pro/purchase", data={"plan": "pro"})
     assert r.status_code == 200
     assert "Activated" in r.text or "license key" in r.text
     assert db.has_pro() is True
 
-    # export now works and returns markdown
-    r2 = c.get("/notes/export.md")
+    # export now works for a signed-in user and returns markdown
+    r2 = login("export@example.com").get("/notes/export.md")
     assert r2.status_code == 200
     assert "OSINT Hub notes" in r2.text
 
-    # deactivate returns to free
+    # an anonymous visitor can't switch it off either
     c.post("/pro/deactivate")
+    assert db.has_pro() is True
+    admin.post("/pro/deactivate")
     assert db.has_pro() is False
 
 
@@ -358,7 +391,7 @@ def test_public_site_resources() -> None:
 
 
 def test_private_desk_and_crypto_checkout_for_pro() -> None:
-    c = TestClient(app)
+    c = admin_client()
     assert c.post("/pro/purchase", data={"plan": "pro"}).status_code == 200
     desk = c.get("/resources/private")
     assert desk.status_code == 200
@@ -369,12 +402,14 @@ def test_private_desk_and_crypto_checkout_for_pro() -> None:
     c.post("/pro/deactivate")
     checkout = c.post("/pro/purchase", data={"plan": "pro"})
     assert "osint hub" in checkout.text.lower()
+    c.post("/pro/deactivate")
 
 
 def test_crypto_checkout_flow() -> None:
     c = TestClient(app)
+    admin = admin_client()
     # ensure free
-    c.post("/pro/deactivate")
+    admin.post("/pro/deactivate")
     page = c.get("/checkout?plan=pro")
     assert page.status_code == 200
     assert "crypto only" in page.text.lower()
@@ -389,10 +424,10 @@ def test_crypto_checkout_flow() -> None:
     ):
         assert address in page.text
     # pro visitors get bounced back to their account
-    c.post("/pro/purchase", data={"plan": "pro"})
+    admin.post("/pro/purchase", data={"plan": "pro"})
     r = c.get("/checkout?plan=pro", follow_redirects=False)
     assert r.status_code == 303
-    c.post("/pro/deactivate")
+    admin.post("/pro/deactivate")
 
 
 def test_admin_sees_all_lookups(monkeypatch) -> None:
@@ -865,7 +900,7 @@ def test_checkout_creates_an_order_with_a_qr() -> None:
     r = c.post("/checkout", data={"plan": "pro", "crypto": "ETH"},
                follow_redirects=False)
     assert r.status_code == 303
-    order_id = int(r.headers["location"].rsplit("/", 1)[1])
+    order_id = order_id_from(r.headers["location"])
     order = db.get_order(order_id)
     assert order["crypto"] == "ETH"
     assert order["plan"] == "pro"
@@ -882,7 +917,7 @@ def test_order_txid_submission() -> None:
     c = login("txid@example.com")
     r = c.post("/checkout", data={"plan": "pro", "crypto": "BTC"},
                follow_redirects=False)
-    order_id = int(r.headers["location"].rsplit("/", 1)[1])
+    order_id = order_id_from(r.headers["location"])
     c.post(f"/checkout/{order_id}/txid", data={"txid": "0xabc123"})
     assert db.get_order(order_id)["status"] == "submitted"
     assert db.get_order(order_id)["txid"] == "0xabc123"
