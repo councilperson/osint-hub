@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Monitor #{{ monitor.id }} — OSINT Hub{% endblock %}
+{% block content %}
+<section class="page">
+  <div class="shell">
+    <div class="page-head">
+      <div class="kicker"><a href="/monitors" style="color:inherit;">monitors</a> / #{{ monitor.id }}</div>
+      <h1>{{ monitor.target }}</h1>
+      <p>{{ monitor.kind }} • {{ monitor.frequency }} • {{ monitor.channel }}</p>
+    </div>
+
+    <div class="account-grid">
+      <section class="panel account-panel">
+        <div class="panel-head"><h3>Recent Runs</h3></div>
+        <div class="panel-body">
+          {% if runs %}
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>When</th><th>Hits Found</th><th>Checked</th><th>Duration</th><th>Status</th><th>Details</th></tr>
+              </thead>
+              <tbody>
+                {% for r in runs %}
+                <tr>
+                  <td class="muted mono" style="font-size:11px;">{{ r.created_str }}</td>
+                  <td class="mono">{{ r.hits_found }}</td>
+                  <td class="mono">{{ r.total_checked }}</td>
+                  <td class="mono">{{ '%.2f'|format(r.elapsed) }}s</td>
+                  <td>
+                    {% if r.error %}
+                    <span class="chip bad">Error</span>
+                    {% else %}
+                    <span class="chip ok">OK</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <a href="/monitors/{{ monitor.id }}/runs/{{ r.id }}" class="btn btn--sm btn--quiet">View Hits</a>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="muted">No runs yet.</p>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="panel account-panel">
+        <div class="panel-head"><h3>Monitor Details</h3></div>
+        <div class="panel-body">
+          <dl class="kv kv--tight">
+            <dt>Search Type</dt><dd>{{ monitor.kind }}</dt>
+            <dt>Target</dt><dd class="mono break">{{ monitor.target }}</dt>
+            <dt>Frequency</dt><dd>{{ monitor.frequency }}</dt>
+            <dt>Channel</dt><dd>{{ monitor.channel }}</dt>
+            <dt>Enabled</dt><dd>{{ 'Yes' if monitor.enabled else 'No' }}</dt>
+            <dt>Created</dt><dd>{{ monitor.created_str }}</dt>
+            <dt>Last Run</dt><dd>{{ monitor.last_run_str if monitor.last_run_str else 'Never' }}</dt>
+            <dt>Last Hit Count</dt><dd>{{ monitor.last_hit_count }}</dt>
+          </dl>
+          <form method="post" action="/monitors/{{ monitor.id }}/toggle" style="margin-top:16px;">
+            <button type="submit" class="btn {{ 'btn--secondary' if monitor.enabled else 'btn--primary' }}">
+              {{ 'Pause Monitor' if monitor.enabled else 'Resume Monitor' }}
+            </button>
+          </form>
+          <form method="post" action="/monitors/{{ monitor.id }}/delete" onsubmit="return confirm('Delete this monitor and all its history?');" style="margin-top:8px;">
+            <button type="submit" class="btn btn--sm btn--danger">Delete Monitor</button>
+          </form>
+        </div>
+      </section>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Monitors & Alerts — OSINT Hub{% endblock %}
+{% block content %}
+<section class="page">
+  <div class="shell">
+    <div class="page-head">
+      <div class="kicker">monitors</div>
+      <h1>Monitoring & Alerts</h1>
+      <p>Set up automated scans that run on a schedule and notify you when new matches appear.</p>
+    </div>
+
+    {% if error %}
+    <div class="banner delbox" role="alert">{{ error }}</div>
+    {% endif %}
+    <p class="muted" style="font-size:13px;margin-bottom:12px;">
+      Monitors are a Pro/Team feature. Each run costs the same credits as a normal
+      search of that type and only alerts you about <em>new</em> matches.
+      {% if not runner_configured %}<br><strong>Runs are not scheduled yet:</strong> set
+      <code>MONITOR_RUNNER_SECRET</code> on the server and have a free cron service call
+      <code>POST /internal/run-monitors</code> with the <code>X-Internal-Secret</code> header.{% endif %}
+    </p>
+
+    <form method="post" action="/monitors" class="panel" style="margin-bottom:20px;">
+      <div class="panel-head"><h3>Create Monitor</h3></div>
+      <div class="panel-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;align-items:flex-end;">
+        <label class="field">
+          <span class="field-label">Search Type</span>
+          <select name="kind" class="select" required>
+            {% for t in search_types %}
+            <option value="{{ t.id }}">{{ t.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Target</span>
+          <input type="text" name="target" placeholder="mrbeast / 8.8.8.8 / example.com" required maxlength="200">
+        </label>
+        <label class="field">
+          <span class="field-label">Frequency</span>
+          <select name="frequency" class="select">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="hourly">Hourly</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Notification Channel</span>
+          <select name="channel" class="select">
+            <option value="email">Email</option>
+            <option value="webhook">Webhook</option>
+            <option value="discord">Discord</option>
+          </select>
+        </label>
+        <label class="field" style="grid-column:1/-1;">
+          <span class="field-label">Channel Config (JSON)</span>
+          <textarea name="channel_config" rows="3" class="mono" style="font-size:12px;"
+            placeholder='{"webhook_url": "https://...", "discord_webhook_url": "https://discord.com/api/webhooks/..."}'></textarea>
+        </label>
+        <button type="submit" class="btn btn--primary" style="grid-column:1/-1;justify-self:start;">Create Monitor</button>
+      </div>
+    </form>
+
+    {% if monitors %}
+    <div class="case-grid">
+      {% for m in monitors %}
+      <div class="case-card">
+        <div class="case-card-head">
+          <div>
+            <span class="chip">{{ m.kind }}</span>
+            <b class="mono" style="margin-left:8px;">{{ m.target }}</b>
+          </div>
+          <span class="chip {{ 'ok' if m.enabled else 'bad' }}">{{ 'Active' if m.enabled else 'Paused' }}</span>
+        </div>
+        <div class="case-card-meta">
+          <span class="mono">{{ m.frequency }} • {{ m.channel }}</span>
+          <span class="muted mono">Last run: {{ m.last_run_str if m.last_run_str else 'Never' }} • {{ m.last_hit_count }} hits</span>
+        </div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-subtle);display:flex;gap:8px;flex-wrap:wrap;">
+          <a href="/monitors/{{ m.id }}" class="btn btn--sm btn--quiet">View Runs</a>
+          <form method="post" action="/monitors/{{ m.id }}/toggle" style="display:inline;">
+            <button type="submit" class="btn btn--sm {{ 'btn--quiet' if m.enabled else 'btn--primary' }}">
+              {{ 'Pause' if m.enabled else 'Resume' }}
+            </button>
+          </form>
+          <form method="post" action="/monitors/{{ m.id }}/delete" onsubmit="return confirm('Delete this monitor?');" style="display:inline;">
+            <button type="submit" class="btn btn--sm btn--danger">Delete</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <h2>No monitors yet.</h2>
+      <p>Create one above to start automated monitoring.</p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

@@ -49,27 +49,35 @@
       <li>Crypto payments only &mdash; no card, no KYC</li>
       <li>Everything in Free, obviously</li>
     </ul>
-    {% if request.state.pro %}
-    <form method="post" action="/pro/deactivate">
-      <button class="btn btn-danger btn-sm" type="submit">Deactivate Pro</button>
-    </form>
-    {% else %}
-    <a class="btn btn-primary" href="/pro/checkout" style="width:100%;justify-content:center">Pay with crypto &nbsp;&#10132;</a>
-    {% endif %}
+    <a class="btn btn-primary" href="/checkout?plan=pro" style="width:100%;justify-content:center">Pay with crypto &nbsp;&#10132;</a>
   </div>
 </div>
 
+{% if is_admin %}
 <section class="card">
-  <h3>Checkout, honestly</h3>
-  <p class="muted">This build runs a <strong>demo crypto checkout</strong>: the
-  checkout page shows BTC / XMR / LTC addresses (placeholders) and pressing
-  &#8220;Payment sent&#8221; issues a license locally &mdash; nothing is billed and no
-  money moves. It exists so you can drive the full upgrade flow end-to-end.
-  To take real coins, plug in a gateway like BTCPay Server and point its
-  webhook at the same purchase endpoint (same pattern as the escrow build:
-  simulated ledger here, real rails gated by configuration). Licenses are
-  checked server-side on every request, so the free-tier limits are enforced
-  in code, not by hiding buttons.</p>
+  <h3>Site-wide Pro switch (admin)</h3>
+  <p class="muted">Turning this on gives <strong>every visitor</strong> Pro features,
+  including people without an account. Leave it off unless you mean it.</p>
+  {% if request.state.site_pro %}
+  <form method="post" action="/pro/deactivate">
+    <button class="btn btn-danger btn-sm" type="submit">Turn site-wide Pro off</button>
+  </form>
+  {% else %}
+  <form method="post" action="/pro/purchase">
+    <input type="hidden" name="plan" value="pro">
+    <button class="btn btn--sm" type="submit">Turn site-wide Pro on</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h3>How checkout works</h3>
+  <p class="muted">Pay with ETH, BTC, SOL or TRX on the checkout page, then paste the
+  transaction hash on your order page. Once the payment is confirmed on-chain the
+  order is approved and your plan and credits switch on. Plans and credits are
+  checked on the server for every request, so limits are enforced in code, not by
+  hiding buttons.</p>
 </section>
 
 {% if licenses %}

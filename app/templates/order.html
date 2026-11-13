@@ -55,6 +55,8 @@
           <div class="order-qr">
             {{ qr_svg | safe }}
           </div>
+          <p class="order-qr-note">Scan to copy the {{ coin.code if coin else order.crypto }} address,
+            then enter the amount above (<b>{{ order.amount }}</b>) in your wallet.</p>
 
           <div class="order-address">
             <span class="lbl">wallet address</span>
@@ -79,6 +81,7 @@
 
         {% if order.status in ('pending', 'submitted') %}
         <form method="post" action="/checkout/{{ order.id }}/txid" class="order-form">
+          <input type="hidden" name="k" value="{{ order_key }}">
           <label class="field">
             <span class="field-label">Transaction hash (TXID)</span>
             <input type="text" name="txid" value="{{ order.txid or '' }}"
