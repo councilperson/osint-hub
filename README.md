@@ -95,24 +95,38 @@ Open http://127.0.0.1:8000
 python -m pytest tests -q
 ```
 
-43 tests covering routing, the DB layer, error rendering, pure logic, the
-corpus shape, query normalisation, endpoint classification (hit / miss /
-unresolved, timeouts, message markers), and the SSE event sequence. Every
-outbound call is mocked.
+120 tests covering routing, the DB layer, error rendering, pure logic, the
+corpus shape, query normalisation, endpoint classification, the SSE event
+sequence, GitHub backups, and (in `tests/test_hardening.py`) one regression
+test per security fix. Every outbound call is mocked.
 
 ## Configuration
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `OSINT_DB` | `data/osint.db` | Where the SQLite file (history + notes) lives |
-| `ADMIN_TOKEN` | `admin12345` | Token for `/admin` (hashed into an HttpOnly session cookie) |
-| `SECRET_KEY` | `osint-hub-local-secret` | Cookie-signing secret; rotate together with the token |
+| `OSINT_DB` | `data/osint.db` | Where the SQLite file lives |
+| `ADMIN_TOKEN` | `admin12345` | Token for the hidden admin console (`/hq-…`, printed in the log). **On Render the console is switched off until you set a token of 12+ characters.** |
+| `SECRET_KEY` | `osint-hub-local-secret` | Signs the admin cookie and order links. Set a long random value in production. |
+| `OWNER_EMAIL` / `OWNER_PASSWORD` | *(none)* | Owner account (Team plan, one-time credit grant). Without `OWNER_PASSWORD` there is no owner panel. The env password always wins at boot. |
 | `HIBP_API_KEY` | *(none)* | Unlocks email-breach lookups on `/hibp` |
-| `OSINT_CONCURRENCY` | `40` | Parallel endpoint checks (lower it on small hosts) |
+| `ADMIN_PATH` | derived from the token | Override the hidden admin path |
+| `OSINT_CONCURRENCY` | `40` | Parallel endpoint checks per sweep (lower it on small hosts) |
 | `OSINT_TIMEOUT` | `8.0` | Per-request timeout in seconds |
+| `OSINT_MAX_SCANS` | `3` | How many full sweeps may run at once; the rest wait (keeps a 512 MB box alive) |
+| `OSINT_PUBLIC` | *(unset)* | Treat the host as public even off Render (enables the production safety checks) |
+| `MONITOR_RUNNER_SECRET` | *(none)* | Shared secret for `POST /internal/run-monitors` (header `X-Internal-Secret`); point a free external cron at it. Without it, monitors only run in-process. |
+| `BACKUP_GITHUB_TOKEN`, `BACKUP_GITHUB_REPO` / `BACKUP_GIST_ID`, `BACKUP_INTERVAL` | *(none)* | Off-box SQLite backups to GitHub (Render's free disk is wiped on every deploy). See `app/backup.py`. |
 
 History is bounded to the 2000 most recent queries. Delete `data/osint.db` to
 reset everything.
+
+### Deploying on Render (free tier)
+
+`render.yaml` builds the `Dockerfile`. Set `ADMIN_TOKEN`, `SECRET_KEY`,
+`OWNER_EMAIL` and `OWNER_PASSWORD` as secrets in the dashboard; the log
+prints a warning at startup for anything still on its default. Cookies are
+marked `Secure` automatically behind HTTPS, and cross-site form posts are
+refused (Origin/Referer check).
 
 ## Architecture
 
@@ -122,7 +136,11 @@ app/
   scanner.py    the sweep engine — corpus, input parsing, worker pool
   stream.py     Server-Sent Events wrapper around the sweep
   services.py   the seven toolbox lookups (RDAP, DoH, ip-api, HIBP, …)
-  db.py         SQLite: history, notes, licenses
+  db.py         SQLite (WAL): users, credits, orders, history, notes, monitors
+  security.py   cookies, CSRF origin check, rate limits, safe URLs, headers
+  backup.py     optional GitHub backup/restore of the SQLite file
+  monitor.py    scheduled re-scans with email / webhook / Discord alerts
+  reseller.py   white-label sub-account API keys
   templates/    Jinja2 pages
   static/       style.css (design tokens) + app.js (dot matrix + live sweep)
 data/
@@ -168,34 +186,3 @@ Everything else stays on your machine.
 Running lookups about third parties can still be unlawful depending on your
 jurisdiction and purpose (harassment, discrimination, surveillance). This tool
 provides access to public data; you are responsible for how you use it.
-
-## Deploying on Render (free tier)
-
-The repo ships a `Dockerfile` and `render.yaml` (`runtime: docker`, `plan: free`).
-Render injects `$PORT`; the container binds `0.0.0.0:${PORT:-8077}` and HTTPS is
-provided by Render, so no nginx/certbot is needed.
-
-Env vars: `ADMIN_TOKEN`, `SECRET_KEY`, `OWNER_EMAIL`, `OWNER_PASSWORD`,
-optional `HIBP_API_KEY`. The admin console lives at
-`/hq-<first 10 hex of sha256(ADMIN_TOKEN)>` unless `ADMIN_PATH` is set.
-
-### Keeping the database across redeploys
-
-Render's free disk is wiped on every deploy/restart. `app/backup.py` keeps the
-SQLite DB off-box on GitHub, for free:
-
-* on startup, if the local DB is missing it is restored from GitHub;
-* every `BACKUP_INTERVAL` seconds (default 300) a consistent snapshot
-  (sqlite3 backup API, gzip + base64) is pushed if anything changed;
-* one final push runs on shutdown (Render sends SIGTERM before a redeploy).
-
-Set `BACKUP_GITHUB_TOKEN` plus one of:
-
-* `BACKUP_GITHUB_REPO=owner/name` - a **private** repo (recommended). Token:
-  fine-grained, that repo only, *Contents: Read and write*.
-* `BACKUP_GIST_ID=<id>` - a secret gist. Token: fine-grained with
-  *Gists: Read and write* (or classic with `gist` scope). Secret gists are
-  unlisted, not private: anyone with the URL can read them.
-
-With none set, backup is a silent no-op. Data written in the last few minutes
-before a hard crash can be lost; normal redeploys are covered by the shutdown push.

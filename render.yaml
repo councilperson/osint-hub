@@ -10,6 +10,9 @@ services:
         value: "24"
       - key: OSINT_TIMEOUT
         value: "10"
+      # how many full username sweeps may run at the same time (512 MB box)
+      - key: OSINT_MAX_SCANS
+        value: "3"
       # admin console, owner account, session signing
       - key: ADMIN_TOKEN
         sync: false
@@ -20,6 +23,9 @@ services:
       - key: OWNER_PASSWORD
         sync: false
       - key: HIBP_API_KEY
+        sync: false
+      # optional: shared secret for POST /internal/run-monitors (external cron)
+      - key: MONITOR_RUNNER_SECRET
         sync: false
       # off-box DB persistence (see app/backup.py); leave unset to disable
       - key: BACKUP_GITHUB_TOKEN
