@@ -9,6 +9,8 @@ string — no network, no fonts, no third-party image service.
 """
 from __future__ import annotations
 
+from decimal import Decimal, ROUND_DOWN, InvalidOperation
+
 # --- GF(256) arithmetic (primitive polynomial 0x11D) ------------------------
 
 _EXP = [0] * 512
@@ -344,8 +346,13 @@ def _place_format(m: list[list[int]], version: int, mask: int) -> None:
             m[7][8] = bit
         else:
             m[14 - i][8] = bit
-        # and the copy near the other two finders
-        if i < 8:
+        # and the copy near the other two finders.
+        # Bits 0-6 sit in the vertical strip beside the bottom-left finder
+        # (size-1 down to size-7). Bit 7 onwards go left-to-right beside the
+        # top-right finder, starting at column size-8. Using i < 8 for the
+        # vertical copy overwrote the mandatory dark module at (size-8, 8)
+        # and shifted the second format copy, so wallets could not scan it.
+        if i < 7:
             m[size - 1 - i][8] = bit
         else:
             m[8][size - 15 + i] = bit
@@ -458,6 +465,63 @@ def svg(text: str, *, modules: int = 8, quiet: int = 4,
                 parts.append(f"M{x},{y}h{modules}v{modules}h-{modules}z")
     parts.append('"/></svg>')
     return "".join(parts)
+
+
+
+def _amount_number(amount: str | None) -> str | None:
+    """Strip a display amount like '0.010000 ETH' down to a plain number."""
+    if not amount:
+        return None
+    token = str(amount).strip().split()[0].replace(",", "")
+    if not token or token in {"—", "-", "–"}:
+        return None
+    try:
+        value = Decimal(token)
+    except (InvalidOperation, ValueError):
+        return None
+    if value <= 0:
+        return None
+    text = format(value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or None
+
+
+def payment_uri(code: str, address: str, amount: str | None = None) -> str:
+    """Wallet-scannable payment URI, with the amount when it is known.
+
+    BTC uses BIP-21 (`bitcoin:<addr>?amount=`), ETH uses EIP-681
+    (`ethereum:<addr>@1?value=` in wei). SOL and TRX use a simple
+    `solana:` / `tron:` URI with `amount`. Unknown coins fall back to
+    the raw address so a QR can still be drawn.
+    """
+    address = (address or "").strip()
+    qty = _amount_number(amount)
+    code = (code or "").upper()
+    if code == "BTC":
+        uri = f"bitcoin:{address}"
+        if qty is not None:
+            uri += f"?amount={qty}"
+        return uri
+    if code == "ETH":
+        uri = f"ethereum:{address}@1"
+        if qty is not None:
+            wei = int((Decimal(qty) * (Decimal(10) ** 18)).to_integral_value(
+                rounding=ROUND_DOWN))
+            if wei > 0:
+                uri += f"?value={wei}"
+        return uri
+    if code == "SOL":
+        uri = f"solana:{address}"
+        if qty is not None:
+            uri += f"?amount={qty}"
+        return uri
+    if code == "TRX":
+        uri = f"tron:{address}"
+        if qty is not None:
+            uri += f"?amount={qty}"
+        return uri
+    return address
 
 
 # --- self-verification ------------------------------------------------------

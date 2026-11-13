@@ -1109,7 +1109,11 @@ async def checkout_order(request: Request, order_id: int, k: str = ""):
         order_key=_order_token(order_id),
         coin=coin,
         plan=plan,
-        qr_svg=(qr.svg(coin["address"]) if coin else ""),
+        qr_svg=(qr.svg(qr.payment_uri(
+            order["crypto"],
+            order.get("address") or coin["address"],
+            order.get("amount"),
+        )) if coin else ""),
     ))
 
 
