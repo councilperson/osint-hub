@@ -1109,11 +1109,10 @@ async def checkout_order(request: Request, order_id: int, k: str = ""):
         order_key=_order_token(order_id),
         coin=coin,
         plan=plan,
-        qr_svg=(qr.svg(qr.payment_uri(
-            order["crypto"],
-            order.get("address") or coin["address"],
-            order.get("amount"),
-        )) if coin else ""),
+        # plain address only (what Exodus & most wallets expect); the amount is
+        # shown as text next to the code
+        qr_svg=(qr.svg(qr.payload(order.get("address") or coin["address"]))
+                if coin else ""),
     ))
 
 
