@@ -1133,7 +1133,64 @@ td.mono { font-family: var(--font-mono); font-size: 13px; }
 .account-panel .panel-body > p,
 .account-panel .panel-body > form,
 .account-panel .panel-body > .apikey-form { padding: 16px; }
+.account-panel .panel-body > .statgrid { padding: 16px 16px 0; }
+.account-panel .panel-body > h4 { padding: 0 16px; }
+.account-panel .panel-body > .item-card-grid { padding: 0 16px 16px; }
 .account-panel .table-wrap { border: 0; border-top: 1px solid var(--border-subtle); }
+
+.item-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.item-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--card-bg);
+}
+.item-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.item-card-head .mono {
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 0;
+}
+.item-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.item-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.item-card-actions form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.item-card-actions input,
+.item-card-actions select {
+  max-width: 100%;
+}
 
 .apikey-form { display: flex; gap: 8px; flex-wrap: wrap; }
 .apikey-form input { flex: 1; min-width: 160px; }
