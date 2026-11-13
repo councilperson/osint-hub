@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}White-Label API — OSINT Hub{% endblock %}
+{% block content %}
+<section class="page">
+  <div class="shell">
+    <div class="page-head">
+      <div class="kicker">reseller</div>
+      <h1>White-Label API Accounts</h1>
+      <p>Create sub-accounts with their own API keys, credit limits, and branded reports. You manage the billing; they use the API.</p>
+    </div>
+
+    {% if error %}
+    <div class="banner delbox" role="alert">{{ error }}</div>
+    {% endif %}
+    <p class="muted" style="font-size:13px;margin-bottom:12px;">Scans by a sub-account are paid from your own credit balance. The credit limit is a spending cap for that client.</p>
+
+    <form method="post" action="/reseller/accounts" class="panel" style="margin-bottom:20px;">
+      <div class="panel-head"><h3>Create New Sub-Account</h3></div>
+      <div class="panel-body" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+        <label class="field" style="flex:1;min-width:200px;">
+          <span class="field-label">Account Name</span>
+          <input type="text" name="name" placeholder="Client Corp" required maxlength="100">
+        </label>
+        <label class="field" style="width:140px;">
+          <span class="field-label">Credits Limit</span>
+          <input type="number" name="credits_limit" value="1000" min="0" max="100000" step="100">
+        </label>
+        <label class="field" style="width:140px;">
+          <span class="field-label">Rate Limit (req/min)</span>
+          <input type="number" name="rate_limit" value="60" min="1" max="1000">
+        </label>
+        <button type="submit" class="btn btn--primary">Create Account</button>
+      </div>
+    </form>
+
+    {% if accounts %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Name</th><th>API Key</th><th>Credits</th><th>Rate Limit</th><th>Status</th><th>Created</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for a in accounts %}
+          <tr>
+            <td>{{ a.name }}</td>
+            <td class="mono">{{ a.api_key[:10] }}…{{ a.api_key[-4:] }}</td>
+            <td class="mono">{{ a.credits_used }} / {{ a.credits_limit }}</td>
+            <td class="mono">{{ a.rate_limit }}/min</td>
+            <td><span class="chip {{ 'ok' if a.active else 'bad' }}">{{ 'Active' if a.active else 'Disabled' }}</span></td>
+            <td class="muted mono" style="font-size:12px;">{{ a.created_str }}</td>
+            <td>
+              <a href="/reseller/accounts/{{ a.id }}" class="btn btn--sm btn--quiet">Manage</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <h2>No sub-accounts yet.</h2>
+      <p>Create your first white-label account above.</p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

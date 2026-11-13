@@ -56,7 +56,7 @@
               {% if hits %}
               <div class="bulk-hits">
                 {% for h in hits[:20] %}
-                <a class="bulk-hit" href="{{ h.url }}" target="_blank" rel="noopener noreferrer">
+                <a class="bulk-hit" href="{{ h.url|safe_url }}" target="_blank" rel="noopener noreferrer">
                   <span class="bulk-hit-name">{{ h.name }}</span>
                   <span class="bulk-hit-detail">{{ h.display_name or h.detail or h.url }}</span>
                 </a>

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Run #{{ run.id }} — OSINT Hub{% endblock %}
+{% block content %}
+<section class="page">
+  <div class="shell">
+    <div class="page-head">
+      <div class="kicker"><a href="/monitors/{{ monitor.id }}" style="color:inherit;">monitor #{{ monitor.id }}</a> / run #{{ run.id }}</div>
+      <h1>{{ monitor.target }}</h1>
+      <p>{{ run.hits_found }} new hits found • {{ run.total_checked }} checked • {{ '%.2f'|format(run.elapsed) }}s</p>
+    </div>
+
+    {% if run.error %}
+    <div class="banner delbox">{{ run.error }}</div>
+    {% endif %}
+
+    {% if hits %}
+    <div class="result-list" style="margin-top:20px;">
+      {% for h in hits %}
+      <article class="match-card">
+        <div class="match-avatar">
+          <span class="match-monogram">{{ h.name[0].upper() if h.name else '?' }}</span>
+          <img loading="lazy" alt="" referrerpolicy="no-referrer" src="{{ h.avatar or '' }}" onerror="this.remove()">
+        </div>
+        <div class="match-body">
+          <div class="match-top">
+            <a class="match-name" href="{{ h.url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ h.name }}</a>
+            <span class="match-cat">{{ h.category }}</span>
+          </div>
+          <div class="match-sub">{{ h.url }}</div>
+          <div class="match-detail">{{ h.detail or '' }}</div>
+        </div>
+        <div class="match-side">
+          <span class="match-status" data-s="hit">match</span>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state" style="margin-top:40px;">
+      <h2>No new hits in this run.</h2>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

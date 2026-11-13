@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=9">
+<link rel="stylesheet" href="/static/style.css?v=10">
 </head>
 <body>
 {% set p = request.url.path %}
@@ -31,8 +31,13 @@
       <a href="/history" class="{{ 'on' if p.startswith('/history') else '' }}">History</a>
       {% if request.state.user %}
         <a href="/cases" class="{{ 'on' if p.startswith('/cases') else '' }}">Cases</a>
+        <a href="/monitors" class="{{ 'on' if p.startswith('/monitors') else '' }}">Monitors</a>
         {% if request.state.plan_info and request.state.plan_info.get('bulk') %}
         <a href="/bulk" class="{{ 'on' if p.startswith('/bulk') else '' }}">Bulk</a>
+        {% endif %}
+        {% if request.state.plan_info and request.state.plan_info.get('api') %}
+        <a href="/reseller/accounts" class="{{ 'on' if p.startswith('/reseller') else '' }}">Reseller</a>
+        <a href="/reports" class="{{ 'on' if p.startswith('/reports') else '' }}">Reports</a>
         {% endif %}
         <a href="/pricing" class="nav-plan {{ 'on' if p.startswith('/pricing') or p.startswith('/checkout') else '' }}">Pricing</a>
         <a href="/account" class="nav-account {{ 'on' if p.startswith('/account') else '' }}">
@@ -70,6 +75,8 @@
         <h4>Workspace</h4>
         <ul>
           <li><a href="/cases">Cloud cases</a></li>
+          <li><a href="/monitors">Monitors & Alerts</a></li>
+          <li><a href="/reports">Professional Reports</a></li>
           <li><a href="/notes">Case notes</a></li>
           <li><a href="/history">Query history</a></li>
           <li><a href="/pricing">Plans & pricing</a></li>
@@ -95,7 +102,7 @@
   </div>
 </footer>
 
-<script src="/static/app.js?v=9"></script>
+<script src="/static/app.js?v=10"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

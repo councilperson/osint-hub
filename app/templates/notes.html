@@ -3,25 +3,32 @@
 {% block content %}
 <div class="hero">
   <h1>Case <span class="grad-text">notes</span></h1>
-  <p class="muted">Findings you pinned during lookups. Stored locally in SQLite
-  at <code>data/osint.db</code> &mdash; your data, your machine.</p>
+  <p class="muted">Findings you pinned during lookups. Notes are private to your
+  account &mdash; nobody else can see them.</p>
 </div>
 
-{% if saved %}<div class="chip ok">Note saved.</div>{% endif %}
+{% if saved %}<div class="chip ok" role="status">Note saved.</div>{% endif %}
 
+{% if not user %}
+<section class="card"><p class="muted"><a href="/login?next=/notes">Log in</a> or
+<a href="/signup?next=/notes">create a free account</a> to keep private case notes.</p></section>
+{% else %}
 <section class="card">
   <h3>&#10133; Add a note</h3>
   <form method="post" action="/notes" class="noteform">
     <div class="note-row">
-      <select name="tool" required>
+      <label class="sr-only" for="note-tool">Tool or source</label>
+      <select id="note-tool" name="tool" required>
         <option value="" disabled selected>Tool / source</option>
         {% for tid, t in tools.items() %}<option value="{{ t.title }}">{{ t.title }}</option>{% endfor %}
         <option value="Pwned checks">Pwned checks</option>
         <option value="Manual entry">Manual entry</option>
       </select>
-      <input type="text" name="target" placeholder="Target (domain, IP, handle, email&#8230;)" required>
+      <label class="sr-only" for="note-target">Target</label>
+      <input id="note-target" type="text" name="target" maxlength="500" placeholder="Target (domain, IP, handle, email&#8230;)" required>
     </div>
-    <textarea name="summary" rows="3" placeholder="What you found and why it matters" required></textarea>
+    <label class="sr-only" for="note-summary">What you found</label>
+    <textarea id="note-summary" name="summary" rows="3" maxlength="2000" placeholder="What you found and why it matters" required></textarea>
     <button type="submit">Save note</button>
   </form>
 </section>
@@ -40,7 +47,7 @@
       <span class="tag">{{ note.tool }}</span>
       <strong>{{ note.target }}</strong>
       <form method="post" action="/notes/{{ note.id }}/delete" class="delbox">
-        <button type="submit" title="Delete">&#10005;</button>
+        <button type="submit" title="Delete" aria-label="Delete note">&#10005;</button>
       </form>
     </div>
     <p>{{ note.summary }}</p>
@@ -49,5 +56,6 @@
 </section>
 {% else %}
 <section class="card"><p class="muted">No notes yet &mdash; pin one from any tool page.</p></section>
+{% endif %}
 {% endif %}
 {% endblock %}

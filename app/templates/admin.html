@@ -6,9 +6,15 @@
 <div class="centerbox card">
   <h3>&#128274; Admin sign-in</h3>
   <p class="muted">Enter the admin token (env var <code>ADMIN_TOKEN</code>).</p>
-  {% if login_error %}<div class="chip bad">Wrong token &mdash; try again.</div>{% endif %}
+  {% if admin_disabled %}
+  <div class="warnbox" role="alert">The admin console is switched off because this public
+  server still uses the default (or a too-short) <code>ADMIN_TOKEN</code>. Set a long random
+  <code>ADMIN_TOKEN</code> in the host's environment and redeploy.</div>
+  {% elif too_many %}<div class="chip bad" role="alert">Too many attempts &mdash; wait 15 minutes.</div>
+  {% elif login_error %}<div class="chip bad" role="alert">Wrong token &mdash; try again.</div>{% endif %}
   <form method="post" action="{{ admin_path }}/login" class="loginform">
-    <input type="password" name="token" placeholder="Admin token" required autocomplete="off">
+    <label class="sr-only" for="admin-token">Admin token</label>
+    <input id="admin-token" type="password" name="token" placeholder="Admin token" required autocomplete="off">
     <button type="submit" class="btn btn--primary">Unlock</button>
   </form>
   <p class="muted" style="margin-top:12px">Set a custom token via <code>ADMIN_TOKEN</code>
@@ -19,9 +25,12 @@
 {% else %}
 <div class="hero">
   <h1>Admin <span class="grad-text">console</span></h1>
-  <p class="muted">Local database maintenance. Everything happens on this
-  machine &mdash; <code>{{ db_path }}</code>.</p>
+  <p class="muted">Accounts, orders and database maintenance &mdash; <code>{{ db_path }}</code>.</p>
 </div>
+
+{% for w in security_warnings %}
+<div class="warnbox" role="alert">&#9888;&#65039; {{ w }}</div>
+{% endfor %}
 
 {% if is_default_token %}
 <div class="warnbox">&#9888;&#65039; You are running on the default token
@@ -67,13 +76,13 @@ restart to change it (then log in again with the new value).</div>
           <td><span class="chip {{ 'warn' if o.status == 'submitted' else '' }}">{{ o.status }}</span></td>
           <td>
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              <form method="post" action="orders/{{ o.id }}/approve">
+              <form method="post" action="{{ admin_path }}/orders/{{ o.id }}/approve">
                 <button class="btn btn--sm btn--primary" type="submit">Approve</button>
               </form>
-              <form method="post" action="orders/{{ o.id }}/reject">
+              <form method="post" action="{{ admin_path }}/orders/{{ o.id }}/reject">
                 <button class="btn btn--sm btn--danger" type="submit">Reject</button>
               </form>
-              <form method="post" action="orders/{{ o.id }}/txid" style="display:flex; gap:4px;">
+              <form method="post" action="{{ admin_path }}/orders/{{ o.id }}/txid" style="display:flex; gap:4px;">
                 <input type="text" name="txid" placeholder="TXID" value="{{ o.txid or '' }}"
                        style="width:150px; padding:4px 6px; background:#0a0a0a; border:1px solid #1a1a1a; color:#fff; font-family:var(--font-mono); font-size:10px;">
                 <button class="btn btn--sm" type="submit">Set</button>
@@ -128,7 +137,7 @@ restart to change it (then log in again with the new value).</div>
         <tr>
           <td class="mono break" style="font-size:12px">{{ u.email }}</td>
           <td>
-            <form method="post" action="users/{{ u.id }}/plan" style="display:flex; gap:4px;">
+            <form method="post" action="{{ admin_path }}/users/{{ u.id }}/plan" style="display:flex; gap:4px;">
               <select name="plan" class="select" style="padding:4px 22px 4px 8px; font-size:11px; background-position: calc(100% - 12px) 50%, calc(100% - 9px) 50%;">
                 {% for p in plan_options %}
                 <option value="{{ p.id }}" {{ 'selected' if u.plan == p.id else '' }}>{{ p.name }}</option>
@@ -138,7 +147,7 @@ restart to change it (then log in again with the new value).</div>
             </form>
           </td>
           <td>
-            <form method="post" action="users/{{ u.id }}/credits" style="display:flex; gap:4px;">
+            <form method="post" action="{{ admin_path }}/users/{{ u.id }}/credits" style="display:flex; gap:4px;">
               <span class="mono" style="font-size:12px; align-self:center; width:3ch;">{{ u.credits }}</span>
               <input type="number" name="amount" value="0" step="1"
                      style="width:80px; padding:4px 6px; background:#0a0a0a; border:1px solid #1a1a1a; color:#fff; font-family:var(--font-mono); font-size:11px;">
@@ -151,10 +160,10 @@ restart to change it (then log in again with the new value).</div>
           </td>
           <td>
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              <form method="post" action="users/{{ u.id }}/grant-plan-credits">
+              <form method="post" action="{{ admin_path }}/users/{{ u.id }}/grant-plan-credits">
                 <button class="btn btn--sm" type="submit">Top up plan</button>
               </form>
-              <form method="post" action="users/{{ u.id }}/delete"
+              <form method="post" action="{{ admin_path }}/users/{{ u.id }}/delete"
                     onsubmit="return confirm('Delete this account and all its data?');">
                 <button class="btn btn--sm btn--danger" type="submit">Delete</button>
               </form>
@@ -171,13 +180,13 @@ restart to change it (then log in again with the new value).</div>
 <section class="card">
   <h3>&#9878; Storage actions</h3>
   <div style="display:flex; gap:10px; flex-wrap:wrap">
-    <form method="post" action="clear-history" onsubmit="return confirm('Delete ALL query history?')">
+    <form method="post" action="{{ admin_path }}/clear-history" onsubmit="return confirm('Delete ALL query history?')">
       <button class="btn btn-danger btn-sm" type="submit">Clear history</button>
     </form>
-    <form method="post" action="clear-notes" onsubmit="return confirm('Delete ALL notes?')">
+    <form method="post" action="{{ admin_path }}/clear-notes" onsubmit="return confirm('Delete ALL notes?')">
       <button class="btn btn-danger btn-sm" type="submit">Clear notes</button>
     </form>
-    <form method="post" action="logout">
+    <form method="post" action="{{ admin_path }}/logout">
       <button class="btn btn--sm" type="submit">Sign out</button>
     </form>
   </div>
@@ -186,8 +195,9 @@ restart to change it (then log in again with the new value).</div>
 <section class="card">
   <h3>&#128230; Registered integrations</h3>
   <table class="grid-t"><tbody>
-    <tr><th>HIBP email lookup</th><td>{{ 'unlocked &#8212; API key loaded' if hibp_keyed else 'locked &#8212; set HIBP_API_KEY to enable (see the Pwned page)' }}</td></tr>
-    <tr><th>Pro licenses</th><td>{{ 'active on this machine' if pro_state else 'none active (demo checkout on /pro)' }}</td></tr>
+    <tr><th>HIBP email lookup</th><td>{{ 'unlocked — API key loaded' if hibp_keyed else 'locked — set HIBP_API_KEY to enable (see the Pwned page)' }}</td></tr>
+    <tr><th>Pro licenses</th><td>{{ 'ACTIVE — every visitor gets Pro features (turn off on /pro)' if pro_state else 'none active (switch on from /pro while signed in here)' }}</td></tr>
+    <tr><th>Database backup</th><td>{{ 'on — snapshots go to GitHub every few minutes' if backup_enabled else 'off — set BACKUP_GITHUB_TOKEN + BACKUP_GITHUB_REPO' }}</td></tr>
     <tr><th>Outbound sources</th><td>Cloudflare DoH &middot; rdap.org &middot; ip-api.com &middot; haveibeenpwned.com &middot; gravatar.com</td></tr>
     <tr><th>Database path</th><td>{{ db_path }}</td></tr>
   </tbody></table>
@@ -203,8 +213,8 @@ restart to change it (then log in again with the new value).</div>
       <tr>
         <td class="muted">{{ item.created_str }}</td>
         <td>{{ item.tool }}</td>
-        <td><a href="/tool/{{ item.tool }}?q={{ item.target }}">{{ item.target }}</a></td>
-        <td><form method="post" action="delete-query/{{ item.id }}"><button class="delbox" type="submit" title="Delete entry">&#10005;</button></form></td>
+        <td><a href="/tool/{{ item.tool|urlencode }}?q={{ item.target|urlencode }}">{{ item.target }}</a></td>
+        <td><form method="post" action="{{ admin_path }}/delete-query/{{ item.id }}"><button class="delbox" type="submit" title="Delete entry">&#10005;</button></form></td>
       </tr>
     {% endfor %}
     </tbody>
@@ -219,7 +229,7 @@ restart to change it (then log in again with the new value).</div>
     <div class="notecard-top">
       <span class="tag">{{ note.tool }}</span>
       <strong>{{ note.target }}</strong>
-      <form method="post" action="delete-note/{{ note.id }}" class="delbox">
+      <form method="post" action="{{ admin_path }}/delete-note/{{ note.id }}" class="delbox">
         <button type="submit" title="Delete note">&#10005;</button>
       </form>
     </div>

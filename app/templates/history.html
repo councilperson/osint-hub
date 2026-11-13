@@ -3,10 +3,13 @@
 {% block content %}
 <div class="hero">
   <h1>Query <span class="grad-text">history</span></h1>
-  <p class="muted">Last {{ queries|length }} lookups (capped at 2000 rows in
-  <code>data/osint.db</code>). Click a target to re-run it.</p>
+  <p class="muted">Your last {{ queries|length }} tool lookups{{ '' if pro else ' (free plan shows 25)' }}.
+  Only you can see them. Click a target to run it again.</p>
 </div>
-{% if queries %}
+{% if not user %}
+<section class="card"><p class="muted"><a href="/login?next=/history">Log in</a> to see the
+lookups you ran. History is private to each account.</p></section>
+{% elif queries %}
 <section class="card">
   <table class="datum grid-t">
     <thead><tr><th>When</th><th>Tool</th><th>Target</th><th></th></tr></thead>
@@ -14,9 +17,9 @@
       {% for item in queries %}
       <tr>
         <td class="muted">{{ item.created_str }}</td>
-        <td><a href="/tool/{{ item.tool }}">{{ item.tool }}</a></td>
-        <td><a href="/tool/{{ item.tool }}?q={{ item.target }}">{{ item.target }}</a></td>
-        <td class="muted">ok</td>
+        <td><a href="/tool/{{ item.tool|urlencode }}">{{ item.tool }}</a></td>
+        <td><a href="/tool/{{ item.tool|urlencode }}?q={{ item.target|urlencode }}">{{ item.target }}</a></td>
+        <td class="muted">{{ 'ok' if item.ok else 'failed' }}</td>
       </tr>
       {% endfor %}
     </tbody>

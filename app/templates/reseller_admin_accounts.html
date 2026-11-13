@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Admin — White-Label Accounts — OSINT Hub{% endblock %}
+{% block content %}
+<section class="page">
+  <div class="shell">
+    <div class="page-head">
+      <h1>White-Label Accounts (Admin)</h1>
+      <p>All sub-accounts across all resellers.</p>
+    </div>
+
+    {% if accounts %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Sub-Account</th><th>Owner</th><th>API Key</th><th>Credits</th><th>Rate Limit</th><th>Status</th><th>Created</th></tr>
+        </thead>
+        <tbody>
+          {% for a in accounts %}
+          <tr>
+            <td><strong>{{ a.name }}</strong></td>
+            <td class="mono break" style="font-size:12px;">{{ a.owner_email }}</td>
+            <td class="mono">{{ a.key }}</td>
+            <td class="mono">{{ a.credits_used }} / {{ a.credits_limit }}</td>
+            <td class="mono">{{ a.rate_limit }}/min</td>
+            <td><span class="chip {{ 'ok' if a.active else 'bad' }}">{{ 'Active' if a.active else 'Disabled' }}</span></td>
+            <td class="muted mono" style="font-size:11px;">{{ a.created_str }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <h2>No white-label accounts yet.</h2>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
