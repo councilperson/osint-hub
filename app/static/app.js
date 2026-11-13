@@ -366,7 +366,7 @@
       if (res.status === "hit" && res.url) {
         var link = document.createElement("a");
         link.className = "source-link";
-        link.href = res.url;
+        link.href = safeHref(res.url);
         link.target = "_blank";
         link.rel = "noopener noreferrer";
         link.textContent = "open";
@@ -387,6 +387,18 @@
     }
 
     /* -- match cards ----------------------------------------------------- */
+
+    // Only http(s)/tel/mailto links ever reach an href — results come from
+    // third-party pages, so a "javascript:" URL must never become clickable.
+    function safeHref(url) {
+      var u = String(url || "").trim();
+      return /^(https?:|tel:|mailto:)/i.test(u) ? u : "#";
+    }
+
+    function safeImg(url) {
+      var u = String(url || "").trim();
+      return /^https?:/i.test(u) ? u : "";
+    }
 
     function faviconFor(url) {
       try {
@@ -410,7 +422,7 @@
       img.loading = "lazy";
       img.alt = "";
       img.referrerPolicy = "no-referrer";
-      img.src = res.avatar || faviconFor(res.url);
+      img.src = safeImg(res.avatar) || faviconFor(res.url);
       img.addEventListener("load", function () {
         avatar.classList.add("has-img");
       });
@@ -440,7 +452,7 @@
 
       var link = document.createElement("a");
       link.className = "match-name";
-      link.href = res.url;
+      link.href = safeHref(res.url);
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       link.textContent = res.name;
@@ -485,7 +497,7 @@
       }
       var open = document.createElement("a");
       open.className = "match-open";
-      open.href = res.url;
+      open.href = safeHref(res.url);
       open.target = "_blank";
       open.rel = "noopener noreferrer";
       open.textContent = "Open profile";
@@ -523,7 +535,7 @@
           img.addEventListener("error", function () { img.remove(); });
           wrap.appendChild(img);
         }
-        img.src = data.avatar;
+        img.src = safeImg(data.avatar);
       }
     }
 
