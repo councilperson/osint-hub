@@ -93,7 +93,7 @@ A backup of the folder from before these changes is at
   data.
 - Accessibility: form labels, focus outlines, screen-reader text, and tables
   that scroll on mobile.
-- Cache-busted `app.js` / `style.css` (`?v=10`).
+- Cache-busted `app.js` / `style.css` (`?v=11`).
 - Removed unused imports. Updated the README (configuration, Render deploy).
 
 ## New env vars
@@ -103,6 +103,19 @@ A backup of the folder from before these changes is at
 - `BACKUP_*` (optional)
 
 All the existing names are unchanged.
+
+## UI
+- Account page: Scan history and the Owner console (all accounts, crypto
+  orders, and all scans) now use card boxes instead of wide table rows.
+  API keys, the credit ledger, cloud cases, and the password form are
+  unchanged.
+
+## Bugs (follow-up)
+- Crypto payment QR codes were often unscannable. The format-information
+  copy beside the top-right finder was shifted by one module and overwrote
+  the mandatory dark module, so wallet apps could not read them. The QR now
+  also encodes a BIP-21 / EIP-681 payment URI with the amount when the rate
+  is known (BTC, ETH, SOL, TRX). Payout addresses are unchanged.
 
 ## Known, not changed
 - API keys are stored in plain text, so existing keys keep working. Hashing
