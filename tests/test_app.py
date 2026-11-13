@@ -1148,78 +1148,106 @@ def test_classify_input_rejects_wrong_type() -> None:
         scanner.classify_input("mrbeast", "name")   # needs a first and last name
 
 
-def test_qr_encoder_round_trips() -> None:
+# John's real payout addresses (as shown on his Exodus receive screens)
+QR_ADDRESSES = {
+    "BTC": "bc1qpw7n2ck6a6vxc6vm5jhm5tf07kd8430ctt3uyl",
+    "ETH": "0x3bcC6F90F5fc09FDeAfB4AECF2EA367Ed32E12D4",
+    "SOL": "32DebfnE2WBVFwVXsiwNEn4DyXHN9moeBLbpcr7W4sEL",
+    "TRX": "TBvY5nkA8viFTAANHPobL4e7Czjadkbs37",
+}
+
+
+def _svg_to_modules(svg_text: str) -> list[list[int]]:
+    """Rasterise segno's SVG (one stroked path of h-runs inside scale(N)) back
+    into a module grid, quiet zone included. Lets the tests decode the exact
+    markup the order page serves without a browser."""
+    import re
+    m = re.search(r'viewBox="0 0 (\d+) (\d+)"', svg_text)
+    assert m, "QR SVG must carry a viewBox so CSS can scale it"
+    scale = int(re.search(r'scale\((\d+)\)', svg_text).group(1))
+    size = int(m.group(1)) // scale
+    grid = [[0] * size for _ in range(size)]
+    d = re.search(r'<path stroke="#000" d="([^"]+)"', svg_text).group(1)
+    x = y = 0.0
+    for cmd, a, b in re.findall(r'([Mmh])(-?[\d.]+)(?:\s(-?[\d.]+))?', d):
+        if cmd == "M":
+            x, y = float(a), float(b)
+        elif cmd == "m":
+            x, y = x + float(a), y + float(b)
+        else:
+            run = int(float(a))
+            for i in range(run):
+                grid[int(y)][int(x) + i] = 1
+            x += run
+    return grid
+
+
+def _decode_modules(grid: list[list[int]], px: int = 8):
+    """Decode a module grid with a real QR reader (zxing-cpp)."""
+    zxingcpp = pytest.importorskip("zxingcpp")
+    Image = pytest.importorskip("PIL.Image")
+    n = len(grid)
+    img = Image.new("L", (n * px, n * px), 255)
+    for r, row in enumerate(grid):
+        for c, v in enumerate(row):
+            if v:
+                img.paste(0, (c * px, r * px, (c + 1) * px, (r + 1) * px))
+    return [b.text for b in zxingcpp.read_barcodes(img)]
+
+
+def test_qr_payload_is_the_plain_address() -> None:
     from app import qr
-    for text in ("0x" + "a" * 40, "HELLO WORLD", "https://osint-hub.example/x"):
-        assert qr.read_back(text) == text
-        assert "<svg" in qr.svg(text)
+    for addr in QR_ADDRESSES.values():
+        assert qr.payload(addr) == addr
+        assert qr.payload(f"  {addr} \n") == addr
+        assert ":" not in qr.payload(addr) and "?" not in qr.payload(addr)
 
 
-def test_qr_format_info_copies_and_dark_module() -> None:
-    """The second format-info copy must not overwrite the dark module."""
+def test_qr_svg_is_black_on_white_with_quiet_zone() -> None:
     from app import qr
-
-    def format_bits_top_left(m):
-        bits = []
-        for i in range(15):
-            if i < 6:
-                bits.append(m[8][i])
-            elif i == 6:
-                bits.append(m[8][7])
-            elif i == 7:
-                bits.append(m[8][8])
-            elif i == 8:
-                bits.append(m[7][8])
-            else:
-                bits.append(m[14 - i][8])
-        return bits
-
-    def format_bits_second_copy(m):
-        size = len(m)
-        bits = []
-        for i in range(15):
-            if i < 7:
-                bits.append(m[size - 1 - i][8])
-            else:
-                bits.append(m[8][size - 15 + i])
-        return bits
-
-    # "A"*28 picks mask 4, whose format bit 7 is 1 — the case that used
-    # to leave the top-right copy shifted and the dark module wrong.
-    known = {qr._format_bits(mask): mask for mask in range(8)}
-    for payload in ("HELLO WORLD", "A" * 28, "0x" + "a" * 40,
-                    "bitcoin:bc1qpw7n2ck6a6vxc6vm5jhm5tf07kd8430ctt3uyl?amount=0.01"):
-        matrix = qr.make_matrix(payload)
-        size = len(matrix)
-        assert matrix[size - 8][8] == 1
-        left = format_bits_top_left(matrix)
-        right = format_bits_second_copy(matrix)
-        assert left == right
-        packed = 0
-        for i, bit in enumerate(left):
-            packed |= bit << i
-        assert packed in known
+    for addr in QR_ADDRESSES.values():
+        svg = qr.svg(addr)
+        assert svg.startswith("<svg") and "<?xml" not in svg
+        assert 'viewBox="0 0 ' in svg and 'shape-rendering="crispEdges"' in svg
+        assert 'fill="#fff"' in svg and 'stroke="#000"' in svg
+        grid = _svg_to_modules(svg)
+        n = len(grid)
+        assert n == len(qr.matrix(addr)) + 2 * qr.QUIET_ZONE
+        # 4-module white border on every side
+        for k in range(qr.QUIET_ZONE):
+            assert not any(grid[k]) and not any(grid[n - 1 - k])
+            assert not any(row[k] for row in grid) and not any(row[n - 1 - k] for row in grid)
 
 
-def test_payment_uri_includes_amount() -> None:
+def test_qr_svg_decodes_to_the_exact_address_with_a_real_reader() -> None:
     from app import qr
-    eth = "0x3bcC6F90F5fc09FDeAfB4AECF2EA367Ed32E12D4"
-    btc = "bc1qpw7n2ck6a6vxc6vm5jhm5tf07kd8430ctt3uyl"
-    eth_uri = qr.payment_uri("ETH", eth, "0.010000 ETH")
-    assert eth_uri.startswith(f"ethereum:{eth}@1?")
-    assert "value=10000000000000000" in eth_uri
-    btc_uri = qr.payment_uri("BTC", btc, "0.00123456 BTC")
-    assert btc_uri == f"bitcoin:{btc}?amount=0.00123456"
-    # no rate / unknown amount still yields a scannable address URI
-    assert qr.payment_uri("ETH", eth, "—") == f"ethereum:{eth}@1"
-    assert qr.payment_uri("BTC", btc, None) == f"bitcoin:{btc}"
-    sol = "32DebfnE2WBVFwVXsiwNEn4DyXHN9moeBLbpcr7W4sEL"
-    assert qr.payment_uri("SOL", sol, "1.2500 SOL") == f"solana:{sol}?amount=1.25"
-    trx = "TBvY5nkA8viFTAANHPobL4e7Czjadkbs37"
-    assert qr.payment_uri("TRX", trx, "150.00 TRX") == f"tron:{trx}?amount=150"
-    for uri in (eth_uri, btc_uri, qr.payment_uri("SOL", sol, "1.25")):
-        assert qr.read_back(uri) == uri
-        assert "<svg" in qr.svg(uri)
+    for coin, addr in QR_ADDRESSES.items():
+        assert _decode_modules(_svg_to_modules(qr.svg(addr))) == [addr], coin
+
+
+def test_qr_png_decodes_to_the_exact_address_with_a_real_reader() -> None:
+    zxingcpp = pytest.importorskip("zxingcpp")
+    Image = pytest.importorskip("PIL.Image")
+    import io
+    from app import qr
+    for coin, addr in QR_ADDRESSES.items():
+        img = Image.open(io.BytesIO(qr.png(addr)))
+        assert [b.text for b in zxingcpp.read_barcodes(img)] == [addr], coin
+
+
+@pytest.mark.parametrize("coin", sorted(QR_ADDRESSES))
+def test_order_page_qr_decodes_to_the_payout_address(coin) -> None:
+    import re
+    c = login(f"qr-{coin.lower()}@example.com")
+    r = c.post("/checkout", data={"plan": "pro", "crypto": coin}, follow_redirects=False)
+    assert r.status_code == 303
+    page = c.get(r.headers["location"])
+    assert page.status_code == 200
+    order = db.get_order(order_id_from(r.headers["location"]))
+    assert order["address"] == QR_ADDRESSES[coin]     # payout address unchanged
+    svg = re.search(r'<div class="order-qr">\s*(<svg.*?</svg>)', page.text, re.S).group(1)
+    assert _decode_modules(_svg_to_modules(svg)) == [QR_ADDRESSES[coin]]
+    assert order["amount"] in page.text                # amount shown as text
 
 
 def test_pdf_and_docx_generators() -> None:
